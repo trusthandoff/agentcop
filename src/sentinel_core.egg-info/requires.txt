@@ -1,0 +1,7 @@
+pydantic<3,>=2.7
+
+[dev]
+pytest
+
+[otel]
+opentelemetry-sdk>=1.20

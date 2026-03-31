@@ -1,0 +1,37 @@
+[project]
+name = "sentinel-core"
+version = "0.1.0"
+description = "Universal forensic auditor for agent systems — OTel-aligned event schema, pluggable violation detectors"
+readme = "README.md"
+requires-python = ">=3.11"
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+authors = [
+    {name = "Shay Mizuno"},
+    {name = "Hind Tagmouti"},
+]
+
+license = {text = "MIT"}
+
+dependencies = [
+    "pydantic>=2.7,<3",
+]
+
+[project.optional-dependencies]
+otel = [
+    "opentelemetry-sdk>=1.20",
+]
+dev = [
+    "pytest",
+]
+
+[project.urls]
+Homepage = "https://github.com/trusthandoff/sentinel-core"
+Repository = "https://github.com/trusthandoff/sentinel-core"

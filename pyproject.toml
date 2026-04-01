@@ -31,6 +31,9 @@ otel = [
 langgraph = [
     "langgraph>=0.2",
 ]
+crewai = [
+    "crewai>=0.80",
+]
 dev = [
     "pytest",
 ]

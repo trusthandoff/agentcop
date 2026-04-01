@@ -43,6 +43,9 @@ llamaindex = [
 haystack = [
     "haystack-ai>=2.0",
 ]
+semantic-kernel = [
+    "semantic-kernel>=1.0",
+]
 dev = [
     "pytest",
 ]

@@ -146,14 +146,64 @@ class MySystemAdapter:
 
 ---
 
-## LangGraph integration *(coming soon)*
+## LangGraph integration
 
-Native LangGraph adapter that hooks into graph execution events — node calls, edge transitions, tool invocations — and surfaces violations without any manual instrumentation.
+Plug into any LangGraph graph with zero changes to your graph code. The adapter reads the debug event stream — node starts, node results, checkpoint saves — and translates each into a `SentinelEvent` for violation detection.
+
+```
+pip install agentcop[langgraph]
+```
+
+Stream a graph in `debug` mode and pipe every event through the adapter:
 
 ```python
-# coming soon
+from agentcop import Sentinel
 from agentcop.adapters.langgraph import LangGraphSentinelAdapter
+
+adapter = LangGraphSentinelAdapter(thread_id="run-abc")
+sentinel = Sentinel()
+
+sentinel.ingest(
+    adapter.iter_events(
+        graph.stream({"input": "..."}, config, stream_mode="debug")
+    )
+)
+
+violations = sentinel.detect_violations()
+sentinel.report()
 ```
+
+Three LangGraph debug event types are translated:
+
+| LangGraph event  | SentinelEvent type        | Severity |
+|------------------|---------------------------|----------|
+| `task`           | `node_start`              | INFO     |
+| `task_result`    | `node_end`                | INFO     |
+| `task_result`    | `node_error` (if errored) | ERROR    |
+| `checkpoint`     | `checkpoint_saved`        | INFO     |
+
+Each event carries structured `attributes` — `node`, `task_id`, `step`, `triggers`, `checkpoint_id`, `next` — so you can write targeted violation detectors:
+
+```python
+from agentcop import ViolationRecord
+
+def detect_node_failure(event):
+    if event.event_type == "node_error":
+        return ViolationRecord(
+            violation_type="node_execution_failed",
+            severity="ERROR",
+            source_event_id=event.event_id,
+            trace_id=event.trace_id,
+            detail={
+                "node": event.attributes["node"],
+                "error": event.attributes["error"],
+            },
+        )
+
+sentinel = Sentinel(detectors=[detect_node_failure])
+```
+
+The `thread_id` passed to `LangGraphSentinelAdapter` is used as `trace_id` on every event, correlating all events from a single graph run.
 
 ---
 

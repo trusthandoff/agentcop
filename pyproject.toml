@@ -49,6 +49,9 @@ semantic-kernel = [
 langfuse = [
     "langfuse>=4.0",
 ]
+langsmith = [
+    "langsmith>=0.1",
+]
 dev = [
     "pytest",
 ]

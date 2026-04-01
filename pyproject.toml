@@ -40,6 +40,9 @@ autogen = [
 llamaindex = [
     "llama-index-core>=0.10",
 ]
+haystack = [
+    "haystack-ai>=2.0",
+]
 dev = [
     "pytest",
 ]

@@ -9,7 +9,7 @@ from .violations import (
 )
 from .adapters import SentinelAdapter
 
-__version__ = "0.1.8"
+__version__ = "0.1.9"
 
 __all__ = [
     # Core schema

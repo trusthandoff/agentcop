@@ -1,13 +1,13 @@
-# sentinel-core
+# agentcop
 
 **The cop for agent fleets.**
 
-Every agent fleet needs a cop. Agents delegate, handoff, and execute — and without forensic oversight, violations are invisible until they're incidents. `sentinel-core` is a universal auditor: ingest events from any agent system, run violation detectors, get structured findings.
+Every agent fleet needs a cop. Agents delegate, handoff, and execute — and without forensic oversight, violations are invisible until they're incidents. `agentcop` is a universal auditor: ingest events from any agent system, run violation detectors, get structured findings.
 
 OTel-aligned schema. Pluggable detectors. Adapter bridge to your stack. Zero required infrastructure.
 
 ```
-pip install sentinel-core
+pip install agentcop
 ```
 
 ---
@@ -159,10 +159,10 @@ from sentinel_core.adapters.langgraph import LangGraphSentinelAdapter
 
 ## OpenTelemetry export *(optional)*
 
-`sentinel-core` events use an OTel-aligned schema out of the box (`trace_id`, `span_id`, severity levels). To export events as OTel log records:
+`agentcop` events use an OTel-aligned schema out of the box (`trace_id`, `span_id`, severity levels). To export events as OTel log records:
 
 ```
-pip install sentinel-core[otel]
+pip install agentcop[otel]
 ```
 
 ```python

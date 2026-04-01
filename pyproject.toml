@@ -46,6 +46,9 @@ haystack = [
 semantic-kernel = [
     "semantic-kernel>=1.0",
 ]
+langfuse = [
+    "langfuse>=4.0",
+]
 dev = [
     "pytest",
 ]

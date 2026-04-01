@@ -7,7 +7,7 @@ The TrustHandoff adapter lives in trusthandoff.sentinel_adapter.
 
 from typing import Any, Dict, Protocol, runtime_checkable
 
-from sentinel_core.event import SentinelEvent
+from agentcop.event import SentinelEvent
 
 
 @runtime_checkable

@@ -3,7 +3,7 @@ OpenTelemetry integration for sentinel-core.
 
 Install the optional dependency to use this module:
 
-    pip install sentinel-core[otel]
+    pip install agentcop[otel]
 
 This module provides:
   - to_otel_log_record()  — convert a SentinelEvent to an OTel LogRecord
@@ -14,7 +14,7 @@ Example::
     from opentelemetry.sdk._logs import LoggerProvider
     from opentelemetry.sdk._logs.export import SimpleLogRecordProcessor
     from opentelemetry.sdk._logs.export.in_memory_span_exporter import InMemoryLogExporter
-    from sentinel_core.otel import OtelSentinelExporter
+    from agentcop.otel import OtelSentinelExporter
 
     provider = LoggerProvider()
     exporter = InMemoryLogExporter()
@@ -48,7 +48,7 @@ def _require_otel() -> None:
     except ImportError as exc:
         raise ImportError(
             "OpenTelemetry integration requires 'opentelemetry-sdk'. "
-            "Install it with: pip install sentinel-core[otel]"
+            "Install it with: pip install agentcop[otel]"
         ) from exc
 
 

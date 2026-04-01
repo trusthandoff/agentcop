@@ -35,7 +35,7 @@ your agent system
 ## Quickstart
 
 ```python
-from sentinel_core import Sentinel, SentinelEvent
+from agentcop import Sentinel, SentinelEvent
 
 sentinel = Sentinel()
 
@@ -77,7 +77,7 @@ Built-in detectors fire on four event types out of the box:
 Detectors are plain functions. Register as many as you need.
 
 ```python
-from sentinel_core import Sentinel, SentinelEvent, ViolationRecord
+from agentcop import Sentinel, SentinelEvent, ViolationRecord
 from typing import Optional
 
 def detect_unauthorized_tool(event: SentinelEvent) -> Optional[ViolationRecord]:
@@ -104,7 +104,7 @@ sentinel.register_detector(detect_unauthorized_tool)
 
 ```python
 from trusthandoff.sentinel_adapter import TrustHandoffSentinelAdapter
-from sentinel_core import Sentinel
+from agentcop import Sentinel
 
 adapter = TrustHandoffSentinelAdapter()
 sentinel = Sentinel()
@@ -125,7 +125,7 @@ The adapter maps trusthandoff's event fields — `packet_id`, `correlation_id`, 
 Implement the `SentinelAdapter` protocol to bridge any system:
 
 ```python
-from sentinel_core import SentinelAdapter, SentinelEvent
+from agentcop import SentinelAdapter, SentinelEvent
 from typing import Dict, Any
 
 class MySystemAdapter:
@@ -152,7 +152,7 @@ Native LangGraph adapter that hooks into graph execution events — node calls, 
 
 ```python
 # coming soon
-from sentinel_core.adapters.langgraph import LangGraphSentinelAdapter
+from agentcop.adapters.langgraph import LangGraphSentinelAdapter
 ```
 
 ---
@@ -166,7 +166,7 @@ pip install agentcop[otel]
 ```
 
 ```python
-from sentinel_core.otel import OtelSentinelExporter
+from agentcop.otel import OtelSentinelExporter
 from opentelemetry.sdk._logs import LoggerProvider
 
 exporter = OtelSentinelExporter(logger_provider=LoggerProvider())

@@ -35,3 +35,6 @@ dev = [
 [project.urls]
 Homepage = "https://github.com/trusthandoff/agentcop"
 Repository = "https://github.com/trusthandoff/agentcop"
+
+[tool.setuptools.packages.find]
+where = ["src"]

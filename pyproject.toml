@@ -34,6 +34,9 @@ langgraph = [
 crewai = [
     "crewai>=0.80",
 ]
+autogen = [
+    "pyautogen>=0.2",
+]
 dev = [
     "pytest",
 ]

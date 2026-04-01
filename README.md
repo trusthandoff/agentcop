@@ -1,4 +1,9 @@
-# Sentinel — The Agent Cop
+# agentcop — The Agent Cop
+
+[![CI](https://github.com/trusthandoff/agentcop/actions/workflows/test.yml/badge.svg)](https://github.com/trusthandoff/agentcop/actions/workflows/test.yml)
+[![PyPI](https://img.shields.io/pypi/v/agentcop)](https://pypi.org/project/agentcop/)
+[![Python](https://img.shields.io/pypi/pyversions/agentcop)](https://pypi.org/project/agentcop/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **The cop for agent fleets.**
 
@@ -9,6 +14,24 @@ OTel-aligned schema. Pluggable detectors. Adapter bridge to your stack. Zero req
 ```
 pip install agentcop
 ```
+
+---
+
+## Adapters
+
+Nine adapters are available — install only what you need:
+
+| Adapter | Framework | Install |
+|---|---|---|
+| [LangGraph](docs/adapters/langgraph.md) | LangGraph graph nodes & edges | `pip install agentcop[langgraph]` |
+| [LangSmith](docs/adapters/langsmith.md) | LangSmith run tracing | `pip install agentcop[langsmith]` |
+| [Langfuse](docs/adapters/langfuse.md) | Langfuse 4.x observations | `pip install agentcop[langfuse]` |
+| [Datadog](docs/adapters/datadog.md) | ddtrace APM spans | `pip install agentcop[ddtrace]` |
+| [Haystack](docs/adapters/haystack.md) | Haystack pipeline components | `pip install agentcop[haystack]` |
+| [Semantic Kernel](docs/adapters/semantic_kernel.md) | Semantic Kernel filters | `pip install agentcop[semantic-kernel]` |
+| [LlamaIndex](docs/adapters/llamaindex.md) | LlamaIndex pipeline events | `pip install agentcop[llamaindex]` |
+| [CrewAI](docs/adapters/crewai.md) | CrewAI agent & task events | `pip install agentcop[crewai]` |
+| [AutoGen](docs/adapters/autogen.md) | AutoGen agent messages | `pip install agentcop[autogen]` |
 
 ---
 

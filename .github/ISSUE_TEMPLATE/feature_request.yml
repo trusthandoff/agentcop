@@ -1,0 +1,57 @@
+name: Feature Request
+description: Propose a new adapter, detector, or other enhancement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For large changes — new adapters, schema modifications, new core
+        primitives — please open an issue to discuss the design **before**
+        writing code. This saves everyone time.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Type of feature
+      options:
+        - New adapter
+        - New built-in detector
+        - Core schema change (SentinelEvent / ViolationRecord)
+        - Sentinel behaviour change
+        - Documentation improvement
+        - Developer tooling / CI
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: >
+        What problem does this solve? Who is affected and how often?
+        "I want X" is less useful than "When I do Y, I can't Z because …"
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: >
+        Describe what you'd like to see. Sketching an API or showing example
+        code is very helpful.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other approaches did you think about and why did you rule them out?
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links, prior art, related issues, anything else.

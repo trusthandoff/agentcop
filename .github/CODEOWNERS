@@ -1,0 +1,15 @@
+# Global owners — review required on all PRs
+* @shaymizuno
+
+# Core schema and public API
+src/agentcop/event.py        @shaymizuno
+src/agentcop/sentinel.py     @shaymizuno
+src/agentcop/__init__.py     @shaymizuno
+src/agentcop/violations.py   @shaymizuno
+
+# Adapter protocol
+src/agentcop/adapters/base.py @shaymizuno
+
+# CI and release infrastructure
+.github/                     @shaymizuno
+pyproject.toml               @shaymizuno

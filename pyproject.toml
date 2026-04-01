@@ -52,6 +52,9 @@ langfuse = [
 langsmith = [
     "langsmith>=0.1",
 ]
+ddtrace = [
+    "ddtrace>=1.0",
+]
 dev = [
     "pytest",
 ]

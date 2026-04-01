@@ -37,6 +37,9 @@ crewai = [
 autogen = [
     "pyautogen>=0.2",
 ]
+llamaindex = [
+    "llama-index-core>=0.10",
+]
 dev = [
     "pytest",
 ]

@@ -1,22 +1,23 @@
 """Tests for CrewAISentinelAdapter. No crewai install required."""
 
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentcop import Sentinel, SentinelEvent
-
+from agentcop import Sentinel
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_adapter(run_id=None):
     """Construct a CrewAISentinelAdapter with the crewai guard bypassed."""
     with patch("agentcop.adapters.crewai._require_crewai"):
         from agentcop.adapters.crewai import CrewAISentinelAdapter
+
         return CrewAISentinelAdapter(run_id=run_id)
 
 
@@ -34,9 +35,11 @@ def adapter_no_run():
 # Guard / import
 # ---------------------------------------------------------------------------
 
+
 class TestRequireCrewAI:
     def test_raises_import_error_when_crewai_missing(self):
         import builtins
+
         real_import = builtins.__import__
 
         def mock_import(name, *args, **kwargs):
@@ -46,17 +49,20 @@ class TestRequireCrewAI:
 
         with patch("builtins.__import__", side_effect=mock_import):
             from agentcop.adapters.crewai import _require_crewai
+
             with pytest.raises(ImportError, match="pip install agentcop\\[crewai\\]"):
                 _require_crewai()
 
     def test_does_not_raise_when_crewai_present(self):
         with patch("builtins.__import__", return_value=MagicMock()):
             from agentcop.adapters.crewai import _require_crewai
+
             _require_crewai()
 
     def test_constructor_calls_require_crewai(self):
         with patch("agentcop.adapters.crewai._require_crewai") as mock_guard:
             from agentcop.adapters.crewai import CrewAISentinelAdapter
+
             CrewAISentinelAdapter()
             mock_guard.assert_called_once()
 
@@ -64,6 +70,7 @@ class TestRequireCrewAI:
 # ---------------------------------------------------------------------------
 # Adapter init
 # ---------------------------------------------------------------------------
+
 
 class TestAdapterInit:
     def test_source_system_is_crewai(self, adapter):
@@ -84,9 +91,12 @@ class TestAdapterInit:
 # Crew events
 # ---------------------------------------------------------------------------
 
+
 class TestFromCrewEvents:
     def test_kickoff_started_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "crew_kickoff_started", "crew_name": "Research Crew"})
+        e = adapter.to_sentinel_event(
+            {"type": "crew_kickoff_started", "crew_name": "Research Crew"}
+        )
         assert e.event_type == "crew_kickoff_started"
 
     def test_kickoff_started_severity_info(self, adapter):
@@ -94,7 +104,9 @@ class TestFromCrewEvents:
         assert e.severity == "INFO"
 
     def test_kickoff_started_body_contains_crew_name(self, adapter):
-        e = adapter.to_sentinel_event({"type": "crew_kickoff_started", "crew_name": "Research Crew"})
+        e = adapter.to_sentinel_event(
+            {"type": "crew_kickoff_started", "crew_name": "Research Crew"}
+        )
         assert "Research Crew" in e.body
 
     def test_kickoff_started_attributes(self, adapter):
@@ -114,32 +126,46 @@ class TestFromCrewEvents:
         assert e.event_id.startswith("crewai-crew-")
 
     def test_kickoff_completed_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "crew_kickoff_completed", "crew_name": "RC", "output": "done"})
+        e = adapter.to_sentinel_event(
+            {"type": "crew_kickoff_completed", "crew_name": "RC", "output": "done"}
+        )
         assert e.event_type == "crew_kickoff_completed"
 
     def test_kickoff_completed_severity_info(self, adapter):
-        e = adapter.to_sentinel_event({"type": "crew_kickoff_completed", "crew_name": "RC", "output": "done"})
+        e = adapter.to_sentinel_event(
+            {"type": "crew_kickoff_completed", "crew_name": "RC", "output": "done"}
+        )
         assert e.severity == "INFO"
 
     def test_kickoff_completed_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "crew_kickoff_completed", "crew_name": "RC", "output": "final answer"})
+        e = adapter.to_sentinel_event(
+            {"type": "crew_kickoff_completed", "crew_name": "RC", "output": "final answer"}
+        )
         assert e.attributes["crew_name"] == "RC"
         assert e.attributes["output"] == "final answer"
 
     def test_kickoff_failed_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "crew_kickoff_failed", "crew_name": "RC", "error": "timeout"})
+        e = adapter.to_sentinel_event(
+            {"type": "crew_kickoff_failed", "crew_name": "RC", "error": "timeout"}
+        )
         assert e.event_type == "crew_kickoff_failed"
 
     def test_kickoff_failed_severity_error(self, adapter):
-        e = adapter.to_sentinel_event({"type": "crew_kickoff_failed", "crew_name": "RC", "error": "timeout"})
+        e = adapter.to_sentinel_event(
+            {"type": "crew_kickoff_failed", "crew_name": "RC", "error": "timeout"}
+        )
         assert e.severity == "ERROR"
 
     def test_kickoff_failed_body_contains_error(self, adapter):
-        e = adapter.to_sentinel_event({"type": "crew_kickoff_failed", "crew_name": "RC", "error": "timeout"})
+        e = adapter.to_sentinel_event(
+            {"type": "crew_kickoff_failed", "crew_name": "RC", "error": "timeout"}
+        )
         assert "timeout" in e.body
 
     def test_kickoff_failed_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "crew_kickoff_failed", "crew_name": "RC", "error": "timeout"})
+        e = adapter.to_sentinel_event(
+            {"type": "crew_kickoff_failed", "crew_name": "RC", "error": "timeout"}
+        )
         assert e.attributes["error"] == "timeout"
         assert e.attributes["crew_name"] == "RC"
 
@@ -152,21 +178,30 @@ class TestFromCrewEvents:
 # Agent events
 # ---------------------------------------------------------------------------
 
+
 class TestFromAgentEvents:
     def test_agent_started_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_execution_started", "agent_role": "Researcher"})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_execution_started", "agent_role": "Researcher"}
+        )
         assert e.event_type == "agent_execution_started"
 
     def test_agent_started_severity_info(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_execution_started", "agent_role": "Researcher"})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_execution_started", "agent_role": "Researcher"}
+        )
         assert e.severity == "INFO"
 
     def test_agent_started_body_contains_role(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_execution_started", "agent_role": "Researcher"})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_execution_started", "agent_role": "Researcher"}
+        )
         assert "Researcher" in e.body
 
     def test_agent_started_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_execution_started", "agent_role": "Researcher"})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_execution_started", "agent_role": "Researcher"}
+        )
         assert e.attributes["agent_role"] == "Researcher"
 
     def test_agent_started_event_id_prefixed(self, adapter):
@@ -174,32 +209,46 @@ class TestFromAgentEvents:
         assert e.event_id.startswith("crewai-agent-")
 
     def test_agent_completed_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_execution_completed", "agent_role": "R", "output": "result"})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_execution_completed", "agent_role": "R", "output": "result"}
+        )
         assert e.event_type == "agent_execution_completed"
 
     def test_agent_completed_severity_info(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_execution_completed", "agent_role": "R", "output": "x"})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_execution_completed", "agent_role": "R", "output": "x"}
+        )
         assert e.severity == "INFO"
 
     def test_agent_completed_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_execution_completed", "agent_role": "Writer", "output": "article"})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_execution_completed", "agent_role": "Writer", "output": "article"}
+        )
         assert e.attributes["agent_role"] == "Writer"
         assert e.attributes["output"] == "article"
 
     def test_agent_error_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_execution_error", "agent_role": "R", "error": "API fail"})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_execution_error", "agent_role": "R", "error": "API fail"}
+        )
         assert e.event_type == "agent_execution_error"
 
     def test_agent_error_severity_error(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_execution_error", "agent_role": "R", "error": "fail"})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_execution_error", "agent_role": "R", "error": "fail"}
+        )
         assert e.severity == "ERROR"
 
     def test_agent_error_body_contains_error(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_execution_error", "agent_role": "R", "error": "API timeout"})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_execution_error", "agent_role": "R", "error": "API timeout"}
+        )
         assert "API timeout" in e.body
 
     def test_agent_error_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_execution_error", "agent_role": "Coder", "error": "SyntaxError"})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_execution_error", "agent_role": "Coder", "error": "SyntaxError"}
+        )
         assert e.attributes["agent_role"] == "Coder"
         assert e.attributes["error"] == "SyntaxError"
 
@@ -212,7 +261,9 @@ class TestFromAgentEvents:
         assert e.trace_id == "run-001"
 
     def test_trace_id_none_when_no_run_id(self, adapter_no_run):
-        e = adapter_no_run.to_sentinel_event({"type": "agent_execution_started", "agent_role": "R"})
+        e = adapter_no_run.to_sentinel_event(
+            {"type": "agent_execution_started", "agent_role": "R"}
+        )
         assert e.trace_id is None
 
 
@@ -220,25 +271,34 @@ class TestFromAgentEvents:
 # Task events
 # ---------------------------------------------------------------------------
 
+
 class TestFromTaskEvents:
     def test_task_started_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "task_started", "task_description": "Research AI trends"})
+        e = adapter.to_sentinel_event(
+            {"type": "task_started", "task_description": "Research AI trends"}
+        )
         assert e.event_type == "task_started"
 
     def test_task_started_severity_info(self, adapter):
-        e = adapter.to_sentinel_event({"type": "task_started", "task_description": "Research AI trends"})
+        e = adapter.to_sentinel_event(
+            {"type": "task_started", "task_description": "Research AI trends"}
+        )
         assert e.severity == "INFO"
 
     def test_task_started_body_contains_description(self, adapter):
-        e = adapter.to_sentinel_event({"type": "task_started", "task_description": "Research AI trends"})
+        e = adapter.to_sentinel_event(
+            {"type": "task_started", "task_description": "Research AI trends"}
+        )
         assert "Research AI trends" in e.body
 
     def test_task_started_attributes_with_agent_role(self, adapter):
-        e = adapter.to_sentinel_event({
-            "type": "task_started",
-            "task_description": "Write report",
-            "agent_role": "Writer",
-        })
+        e = adapter.to_sentinel_event(
+            {
+                "type": "task_started",
+                "task_description": "Write report",
+                "agent_role": "Writer",
+            }
+        )
         assert e.attributes["task_description"] == "Write report"
         assert e.attributes["agent_role"] == "Writer"
 
@@ -251,32 +311,46 @@ class TestFromTaskEvents:
         assert e.event_id.startswith("crewai-task-")
 
     def test_task_completed_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "task_completed", "task_description": "x", "output": "y"})
+        e = adapter.to_sentinel_event(
+            {"type": "task_completed", "task_description": "x", "output": "y"}
+        )
         assert e.event_type == "task_completed"
 
     def test_task_completed_severity_info(self, adapter):
-        e = adapter.to_sentinel_event({"type": "task_completed", "task_description": "x", "output": "y"})
+        e = adapter.to_sentinel_event(
+            {"type": "task_completed", "task_description": "x", "output": "y"}
+        )
         assert e.severity == "INFO"
 
     def test_task_completed_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "task_completed", "task_description": "research", "output": "report"})
+        e = adapter.to_sentinel_event(
+            {"type": "task_completed", "task_description": "research", "output": "report"}
+        )
         assert e.attributes["task_description"] == "research"
         assert e.attributes["output"] == "report"
 
     def test_task_failed_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "task_failed", "task_description": "x", "error": "fail"})
+        e = adapter.to_sentinel_event(
+            {"type": "task_failed", "task_description": "x", "error": "fail"}
+        )
         assert e.event_type == "task_failed"
 
     def test_task_failed_severity_error(self, adapter):
-        e = adapter.to_sentinel_event({"type": "task_failed", "task_description": "x", "error": "fail"})
+        e = adapter.to_sentinel_event(
+            {"type": "task_failed", "task_description": "x", "error": "fail"}
+        )
         assert e.severity == "ERROR"
 
     def test_task_failed_body_contains_error(self, adapter):
-        e = adapter.to_sentinel_event({"type": "task_failed", "task_description": "x", "error": "RateLimit"})
+        e = adapter.to_sentinel_event(
+            {"type": "task_failed", "task_description": "x", "error": "RateLimit"}
+        )
         assert "RateLimit" in e.body
 
     def test_task_failed_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "task_failed", "task_description": "task", "error": "boom"})
+        e = adapter.to_sentinel_event(
+            {"type": "task_failed", "task_description": "task", "error": "boom"}
+        )
         assert e.attributes["task_description"] == "task"
         assert e.attributes["error"] == "boom"
 
@@ -285,59 +359,101 @@ class TestFromTaskEvents:
 # Tool events
 # ---------------------------------------------------------------------------
 
+
 class TestFromToolEvents:
     def test_tool_started_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "tool_usage_started", "tool_name": "SerperDevTool", "agent_role": "R"})
+        e = adapter.to_sentinel_event(
+            {"type": "tool_usage_started", "tool_name": "SerperDevTool", "agent_role": "R"}
+        )
         assert e.event_type == "tool_usage_started"
 
     def test_tool_started_severity_info(self, adapter):
-        e = adapter.to_sentinel_event({"type": "tool_usage_started", "tool_name": "T", "agent_role": "R"})
+        e = adapter.to_sentinel_event(
+            {"type": "tool_usage_started", "tool_name": "T", "agent_role": "R"}
+        )
         assert e.severity == "INFO"
 
     def test_tool_started_body_contains_tool_and_agent(self, adapter):
-        e = adapter.to_sentinel_event({"type": "tool_usage_started", "tool_name": "WebSearch", "agent_role": "Researcher"})
+        e = adapter.to_sentinel_event(
+            {"type": "tool_usage_started", "tool_name": "WebSearch", "agent_role": "Researcher"}
+        )
         assert "WebSearch" in e.body
         assert "Researcher" in e.body
 
     def test_tool_started_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "tool_usage_started", "tool_name": "WebSearch", "agent_role": "Researcher"})
+        e = adapter.to_sentinel_event(
+            {"type": "tool_usage_started", "tool_name": "WebSearch", "agent_role": "Researcher"}
+        )
         assert e.attributes["tool_name"] == "WebSearch"
         assert e.attributes["agent_role"] == "Researcher"
 
     def test_tool_started_event_id_prefixed(self, adapter):
-        e = adapter.to_sentinel_event({"type": "tool_usage_started", "tool_name": "T", "agent_role": "R"})
+        e = adapter.to_sentinel_event(
+            {"type": "tool_usage_started", "tool_name": "T", "agent_role": "R"}
+        )
         assert e.event_id.startswith("crewai-tool-")
 
     def test_tool_finished_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "tool_usage_finished", "tool_name": "T", "agent_role": "R"})
+        e = adapter.to_sentinel_event(
+            {"type": "tool_usage_finished", "tool_name": "T", "agent_role": "R"}
+        )
         assert e.event_type == "tool_usage_finished"
 
     def test_tool_finished_severity_info(self, adapter):
-        e = adapter.to_sentinel_event({"type": "tool_usage_finished", "tool_name": "T", "agent_role": "R"})
+        e = adapter.to_sentinel_event(
+            {"type": "tool_usage_finished", "tool_name": "T", "agent_role": "R"}
+        )
         assert e.severity == "INFO"
 
     def test_tool_finished_from_cache_true(self, adapter):
-        e = adapter.to_sentinel_event({"type": "tool_usage_finished", "tool_name": "T", "agent_role": "R", "from_cache": True})
+        e = adapter.to_sentinel_event(
+            {
+                "type": "tool_usage_finished",
+                "tool_name": "T",
+                "agent_role": "R",
+                "from_cache": True,
+            }
+        )
         assert e.attributes["from_cache"] is True
 
     def test_tool_finished_from_cache_defaults_false(self, adapter):
-        e = adapter.to_sentinel_event({"type": "tool_usage_finished", "tool_name": "T", "agent_role": "R"})
+        e = adapter.to_sentinel_event(
+            {"type": "tool_usage_finished", "tool_name": "T", "agent_role": "R"}
+        )
         assert e.attributes["from_cache"] is False
 
     def test_tool_error_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "tool_usage_error", "tool_name": "T", "agent_role": "R", "error": "403"})
+        e = adapter.to_sentinel_event(
+            {"type": "tool_usage_error", "tool_name": "T", "agent_role": "R", "error": "403"}
+        )
         assert e.event_type == "tool_usage_error"
 
     def test_tool_error_severity_error(self, adapter):
-        e = adapter.to_sentinel_event({"type": "tool_usage_error", "tool_name": "T", "agent_role": "R", "error": "403"})
+        e = adapter.to_sentinel_event(
+            {"type": "tool_usage_error", "tool_name": "T", "agent_role": "R", "error": "403"}
+        )
         assert e.severity == "ERROR"
 
     def test_tool_error_body_contains_error(self, adapter):
-        e = adapter.to_sentinel_event({"type": "tool_usage_error", "tool_name": "WebSearch", "agent_role": "R", "error": "rate limit"})
+        e = adapter.to_sentinel_event(
+            {
+                "type": "tool_usage_error",
+                "tool_name": "WebSearch",
+                "agent_role": "R",
+                "error": "rate limit",
+            }
+        )
         assert "rate limit" in e.body
 
     def test_tool_error_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "tool_usage_error", "tool_name": "WebSearch", "agent_role": "Researcher", "error": "403"})
+        e = adapter.to_sentinel_event(
+            {
+                "type": "tool_usage_error",
+                "tool_name": "WebSearch",
+                "agent_role": "Researcher",
+                "error": "403",
+            }
+        )
         assert e.attributes["tool_name"] == "WebSearch"
         assert e.attributes["agent_role"] == "Researcher"
         assert e.attributes["error"] == "403"
@@ -350,6 +466,7 @@ class TestFromToolEvents:
 # ---------------------------------------------------------------------------
 # Unknown / empty events
 # ---------------------------------------------------------------------------
+
 
 class TestFromUnknown:
     def test_unknown_type_gives_unknown_crewai_event(self, adapter):
@@ -385,25 +502,40 @@ class TestFromUnknown:
 # Timestamp parsing
 # ---------------------------------------------------------------------------
 
+
 class TestTimestampParsing:
     def test_iso_z_suffix_parsed(self, adapter):
-        e = adapter.to_sentinel_event({"type": "crew_kickoff_started", "crew_name": "RC", "timestamp": "2026-06-01T12:00:00Z"})
-        assert e.timestamp == datetime(2026, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+        e = adapter.to_sentinel_event(
+            {
+                "type": "crew_kickoff_started",
+                "crew_name": "RC",
+                "timestamp": "2026-06-01T12:00:00Z",
+            }
+        )
+        assert e.timestamp == datetime(2026, 6, 1, 12, 0, 0, tzinfo=UTC)
 
     def test_iso_offset_parsed(self, adapter):
-        e = adapter.to_sentinel_event({"type": "crew_kickoff_started", "crew_name": "RC", "timestamp": "2026-06-01T12:00:00+00:00"})
+        e = adapter.to_sentinel_event(
+            {
+                "type": "crew_kickoff_started",
+                "crew_name": "RC",
+                "timestamp": "2026-06-01T12:00:00+00:00",
+            }
+        )
         assert e.timestamp.year == 2026
 
     def test_missing_timestamp_uses_now(self, adapter):
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         e = adapter.to_sentinel_event({"type": "crew_kickoff_started", "crew_name": "RC"})
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
         assert before <= e.timestamp <= after
 
     def test_invalid_timestamp_falls_back_to_now(self, adapter):
-        before = datetime.now(timezone.utc)
-        e = adapter.to_sentinel_event({"type": "crew_kickoff_started", "crew_name": "RC", "timestamp": "not-a-date"})
-        after = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
+        e = adapter.to_sentinel_event(
+            {"type": "crew_kickoff_started", "crew_name": "RC", "timestamp": "not-a-date"}
+        )
+        after = datetime.now(UTC)
         assert before <= e.timestamp <= after
 
 
@@ -411,11 +543,20 @@ class TestTimestampParsing:
 # drain() and flush_into()
 # ---------------------------------------------------------------------------
 
+
 class TestDrainFlush:
     def _push(self, adapter, *types):
         for t in types:
             adapter._buffer_event(
-                adapter.to_sentinel_event({"type": t, "crew_name": "RC", "agent_role": "R", "task_description": "x", "tool_name": "T"})
+                adapter.to_sentinel_event(
+                    {
+                        "type": t,
+                        "crew_name": "RC",
+                        "agent_role": "R",
+                        "task_description": "x",
+                        "tool_name": "T",
+                    }
+                )
             )
 
     def test_drain_returns_buffered_events(self, adapter):
@@ -468,6 +609,7 @@ class TestDrainFlush:
 # Buffer thread safety
 # ---------------------------------------------------------------------------
 
+
 class TestBufferThreadSafety:
     def test_concurrent_buffer_event_does_not_corrupt(self, adapter):
         errors = []
@@ -475,7 +617,9 @@ class TestBufferThreadSafety:
         def worker(i):
             try:
                 adapter._buffer_event(
-                    adapter.to_sentinel_event({"type": "crew_kickoff_started", "crew_name": f"crew-{i}"})
+                    adapter.to_sentinel_event(
+                        {"type": "crew_kickoff_started", "crew_name": f"crew-{i}"}
+                    )
                 )
             except Exception as e:
                 errors.append(e)
@@ -495,7 +639,9 @@ class TestBufferThreadSafety:
         def bufferer(i):
             try:
                 adapter._buffer_event(
-                    adapter.to_sentinel_event({"type": "agent_execution_started", "agent_role": f"agent-{i}"})
+                    adapter.to_sentinel_event(
+                        {"type": "agent_execution_started", "agent_role": f"agent-{i}"}
+                    )
                 )
             except Exception as e:
                 errors.append(e)
@@ -506,10 +652,9 @@ class TestBufferThreadSafety:
             except Exception as e:
                 errors.append(e)
 
-        threads = (
-            [threading.Thread(target=bufferer, args=(i,)) for i in range(25)]
-            + [threading.Thread(target=drainer) for _ in range(25)]
-        )
+        threads = [threading.Thread(target=bufferer, args=(i,)) for i in range(25)] + [
+            threading.Thread(target=drainer) for _ in range(25)
+        ]
         for t in threads:
             t.start()
         for t in threads:
@@ -522,17 +667,21 @@ class TestBufferThreadSafety:
 # setup() — mocked event bus
 # ---------------------------------------------------------------------------
 
+
 class TestSetup:
     def test_setup_registers_handlers_with_bus(self):
         adapter = _make_adapter()
         mock_bus = MagicMock()
         mock_module = MagicMock()
 
-        with patch.dict("sys.modules", {
-            "crewai": MagicMock(),
-            "crewai.utilities": MagicMock(),
-            "crewai.utilities.events": mock_module,
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "crewai": MagicMock(),
+                "crewai.utilities": MagicMock(),
+                "crewai.utilities.events": mock_module,
+            },
+        ):
             adapter.setup(mock_bus)
 
         # bus.on() called once per registered event type (12 total)
@@ -544,11 +693,14 @@ class TestSetup:
         mock_default_bus = MagicMock()
         mock_module.crewai_event_bus = mock_default_bus
 
-        with patch.dict("sys.modules", {
-            "crewai": MagicMock(),
-            "crewai.utilities": MagicMock(),
-            "crewai.utilities.events": mock_module,
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "crewai": MagicMock(),
+                "crewai.utilities": MagicMock(),
+                "crewai.utilities.events": mock_module,
+            },
+        ):
             adapter.setup()  # no bus argument
 
         assert mock_default_bus.on.call_count == 12
@@ -558,9 +710,11 @@ class TestSetup:
 # Protocol conformance
 # ---------------------------------------------------------------------------
 
+
 class TestProtocolConformance:
     def test_satisfies_sentinel_adapter_protocol(self, adapter):
         from agentcop import SentinelAdapter
+
         assert isinstance(adapter, SentinelAdapter)
 
     def test_source_system_attribute(self, adapter):
@@ -574,6 +728,7 @@ class TestProtocolConformance:
 # Integration with Sentinel
 # ---------------------------------------------------------------------------
 
+
 class TestSentinelIntegration:
     def test_all_error_events_collected(self, adapter):
         sentinel = Sentinel()
@@ -582,7 +737,12 @@ class TestSentinelIntegration:
             {"type": "crew_kickoff_failed", "crew_name": "RC", "error": "timeout"},
             {"type": "agent_execution_error", "agent_role": "Researcher", "error": "API fail"},
             {"type": "task_failed", "task_description": "research", "error": "no results"},
-            {"type": "tool_usage_error", "tool_name": "WebSearch", "agent_role": "R", "error": "403"},
+            {
+                "type": "tool_usage_error",
+                "tool_name": "WebSearch",
+                "agent_role": "R",
+                "error": "403",
+            },
         ]:
             adapter._buffer_event(adapter.to_sentinel_event(raw))
 
@@ -607,11 +767,15 @@ class TestSentinelIntegration:
                     },
                 )
 
-        adapter._buffer_event(adapter.to_sentinel_event({
-            "type": "agent_execution_error",
-            "agent_role": "Researcher",
-            "error": "OpenAI API timeout",
-        }))
+        adapter._buffer_event(
+            adapter.to_sentinel_event(
+                {
+                    "type": "agent_execution_error",
+                    "agent_role": "Researcher",
+                    "error": "OpenAI API timeout",
+                }
+            )
+        )
 
         sentinel = Sentinel(detectors=[detect_agent_failure])
         adapter.flush_into(sentinel)
@@ -632,14 +796,21 @@ class TestSentinelIntegration:
                     severity="ERROR",
                     source_event_id=event.event_id,
                     trace_id=event.trace_id,
-                    detail={"task": event.attributes.get("task_description"), "error": event.attributes.get("error")},
+                    detail={
+                        "task": event.attributes.get("task_description"),
+                        "error": event.attributes.get("error"),
+                    },
                 )
 
-        adapter._buffer_event(adapter.to_sentinel_event({
-            "type": "task_failed",
-            "task_description": "Summarize quarterly report",
-            "error": "context length exceeded",
-        }))
+        adapter._buffer_event(
+            adapter.to_sentinel_event(
+                {
+                    "type": "task_failed",
+                    "task_description": "Summarize quarterly report",
+                    "error": "context length exceeded",
+                }
+            )
+        )
 
         sentinel = Sentinel(detectors=[detect_task_failure])
         adapter.flush_into(sentinel)

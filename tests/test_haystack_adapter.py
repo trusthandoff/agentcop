@@ -9,9 +9,7 @@ from __future__ import annotations
 
 import sys
 import threading
-from contextlib import contextmanager
-from datetime import datetime, timezone
-from typing import List
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -19,15 +17,16 @@ import pytest
 from agentcop import Sentinel, ViolationRecord
 from agentcop.event import SentinelEvent
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_adapter(run_id=None):
     """Return a HaystackSentinelAdapter with the import guard bypassed."""
     with patch("agentcop.adapters.haystack._require_haystack"):
         from agentcop.adapters.haystack import HaystackSentinelAdapter
+
         return HaystackSentinelAdapter(run_id=run_id)
 
 
@@ -46,12 +45,14 @@ def _mock_modules():
 # TestRequireHaystack
 # ---------------------------------------------------------------------------
 
+
 class TestRequireHaystack:
     def test_raises_when_haystack_missing(self):
         with patch.dict("sys.modules", {"haystack": None}):
             if "agentcop.adapters.haystack" in sys.modules:
                 del sys.modules["agentcop.adapters.haystack"]
             from agentcop.adapters.haystack import _require_haystack
+
             with pytest.raises(ImportError, match="haystack-ai"):
                 _require_haystack()
 
@@ -59,14 +60,18 @@ class TestRequireHaystack:
         mock_haystack = MagicMock()
         with patch.dict("sys.modules", {"haystack": mock_haystack}):
             from agentcop.adapters.haystack import _require_haystack
+
             _require_haystack()  # no exception
 
     def test_constructor_calls_require(self):
         called = []
+
         def fake_require():
             called.append(True)
+
         with patch("agentcop.adapters.haystack._require_haystack", fake_require):
             from agentcop.adapters.haystack import HaystackSentinelAdapter
+
             HaystackSentinelAdapter()
         assert called == [True]
 
@@ -74,6 +79,7 @@ class TestRequireHaystack:
 # ---------------------------------------------------------------------------
 # TestAdapterInit
 # ---------------------------------------------------------------------------
+
 
 class TestAdapterInit:
     def test_source_system(self):
@@ -97,6 +103,7 @@ class TestAdapterInit:
 # TestFromPipelineEvents
 # ---------------------------------------------------------------------------
 
+
 class TestFromPipelineEvents:
     def setup_method(self):
         self.adapter = _make_adapter(run_id="trace-pipeline")
@@ -118,11 +125,15 @@ class TestFromPipelineEvents:
         assert ev.trace_id == "trace-pipeline"
 
     def test_pipeline_started_pipeline_name(self):
-        ev = self.adapter.to_sentinel_event({"type": "pipeline_started", "pipeline_name": "my-pipe"})
+        ev = self.adapter.to_sentinel_event(
+            {"type": "pipeline_started", "pipeline_name": "my-pipe"}
+        )
         assert ev.attributes["pipeline_name"] == "my-pipe"
 
     def test_pipeline_started_body_contains_name(self):
-        ev = self.adapter.to_sentinel_event({"type": "pipeline_started", "pipeline_name": "rag-v2"})
+        ev = self.adapter.to_sentinel_event(
+            {"type": "pipeline_started", "pipeline_name": "rag-v2"}
+        )
         assert "rag-v2" in ev.body
 
     def test_pipeline_started_event_id_prefix(self):
@@ -142,10 +153,12 @@ class TestFromPipelineEvents:
         assert ev.attributes["output_keys"] == []
 
     def test_pipeline_finished_output_keys_present(self):
-        ev = self.adapter.to_sentinel_event({
-            "type": "pipeline_finished",
-            "output_keys": ["llm", "retriever"],
-        })
+        ev = self.adapter.to_sentinel_event(
+            {
+                "type": "pipeline_finished",
+                "output_keys": ["llm", "retriever"],
+            }
+        )
         assert set(ev.attributes["output_keys"]) == {"llm", "retriever"}
 
     def test_pipeline_error_event_type(self):
@@ -173,6 +186,7 @@ class TestFromPipelineEvents:
 # TestFromComponentEvents
 # ---------------------------------------------------------------------------
 
+
 class TestFromComponentEvents:
     def setup_method(self):
         self.adapter = _make_adapter()
@@ -190,11 +204,15 @@ class TestFromComponentEvents:
         assert ev.event_id.startswith("haystack-component-")
 
     def test_component_started_component_name(self):
-        ev = self.adapter.to_sentinel_event({"type": "component_started", "component_name": "router"})
+        ev = self.adapter.to_sentinel_event(
+            {"type": "component_started", "component_name": "router"}
+        )
         assert ev.attributes["component_name"] == "router"
 
     def test_component_started_component_type(self):
-        ev = self.adapter.to_sentinel_event({"type": "component_started", "component_type": "Router"})
+        ev = self.adapter.to_sentinel_event(
+            {"type": "component_started", "component_type": "Router"}
+        )
         assert ev.attributes["component_type"] == "Router"
 
     def test_component_finished_event_type(self):
@@ -230,6 +248,7 @@ class TestFromComponentEvents:
 # ---------------------------------------------------------------------------
 # TestFromLLMEvents
 # ---------------------------------------------------------------------------
+
 
 class TestFromLLMEvents:
     def setup_method(self):
@@ -300,6 +319,7 @@ class TestFromLLMEvents:
 # TestFromRetrieverEvents
 # ---------------------------------------------------------------------------
 
+
 class TestFromRetrieverEvents:
     def setup_method(self):
         self.adapter = _make_adapter()
@@ -317,7 +337,9 @@ class TestFromRetrieverEvents:
         assert ev.event_id.startswith("haystack-retriever-")
 
     def test_retriever_run_started_query(self):
-        ev = self.adapter.to_sentinel_event({"type": "retriever_run_started", "query": "what is RAG"})
+        ev = self.adapter.to_sentinel_event(
+            {"type": "retriever_run_started", "query": "what is RAG"}
+        )
         assert ev.attributes["query"] == "what is RAG"
 
     def test_retriever_run_started_empty_query(self):
@@ -341,13 +363,16 @@ class TestFromRetrieverEvents:
         assert "3" in ev.body
 
     def test_retriever_run_started_component_name(self):
-        ev = self.adapter.to_sentinel_event({"type": "retriever_run_started", "component_name": "ret"})
+        ev = self.adapter.to_sentinel_event(
+            {"type": "retriever_run_started", "component_name": "ret"}
+        )
         assert ev.attributes["component_name"] == "ret"
 
 
 # ---------------------------------------------------------------------------
 # TestFromEmbedderEvents
 # ---------------------------------------------------------------------------
+
 
 class TestFromEmbedderEvents:
     def setup_method(self):
@@ -366,7 +391,9 @@ class TestFromEmbedderEvents:
         assert ev.event_id.startswith("haystack-embedder-")
 
     def test_embedder_run_started_model(self):
-        ev = self.adapter.to_sentinel_event({"type": "embedder_run_started", "model": "text-embedding-3-small"})
+        ev = self.adapter.to_sentinel_event(
+            {"type": "embedder_run_started", "model": "text-embedding-3-small"}
+        )
         assert ev.attributes["model"] == "text-embedding-3-small"
 
     def test_embedder_run_finished_event_type(self):
@@ -389,6 +416,7 @@ class TestFromEmbedderEvents:
 # ---------------------------------------------------------------------------
 # TestFromUnknown
 # ---------------------------------------------------------------------------
+
 
 class TestFromUnknown:
     def setup_method(self):
@@ -423,44 +451,52 @@ class TestFromUnknown:
 # TestTimestampParsing
 # ---------------------------------------------------------------------------
 
+
 class TestTimestampParsing:
     def setup_method(self):
         self.adapter = _make_adapter()
 
     def test_parses_iso_timestamp(self):
-        ev = self.adapter.to_sentinel_event({
-            "type": "pipeline_started",
-            "timestamp": "2026-04-01T10:00:00Z",
-        })
+        ev = self.adapter.to_sentinel_event(
+            {
+                "type": "pipeline_started",
+                "timestamp": "2026-04-01T10:00:00Z",
+            }
+        )
         assert ev.timestamp.year == 2026
         assert ev.timestamp.month == 4
 
     def test_parses_timestamp_without_z(self):
-        ev = self.adapter.to_sentinel_event({
-            "type": "pipeline_started",
-            "timestamp": "2026-04-01T10:00:00+00:00",
-        })
+        ev = self.adapter.to_sentinel_event(
+            {
+                "type": "pipeline_started",
+                "timestamp": "2026-04-01T10:00:00+00:00",
+            }
+        )
         assert ev.timestamp.year == 2026
 
     def test_falls_back_to_now_on_invalid_timestamp(self):
-        before = datetime.now(timezone.utc)
-        ev = self.adapter.to_sentinel_event({
-            "type": "pipeline_started",
-            "timestamp": "not-a-date",
-        })
-        after = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
+        ev = self.adapter.to_sentinel_event(
+            {
+                "type": "pipeline_started",
+                "timestamp": "not-a-date",
+            }
+        )
+        after = datetime.now(UTC)
         assert before <= ev.timestamp <= after
 
     def test_falls_back_to_now_when_no_timestamp(self):
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         ev = self.adapter.to_sentinel_event({"type": "pipeline_started"})
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
         assert before <= ev.timestamp <= after
 
 
 # ---------------------------------------------------------------------------
 # TestDrainFlush
 # ---------------------------------------------------------------------------
+
 
 class TestDrainFlush:
     def setup_method(self):
@@ -522,6 +558,7 @@ class TestDrainFlush:
 # TestBufferThreadSafety
 # ---------------------------------------------------------------------------
 
+
 class TestBufferThreadSafety:
     def test_concurrent_buffer_events(self):
         adapter = _make_adapter()
@@ -546,7 +583,7 @@ class TestBufferThreadSafety:
 
     def test_drain_concurrent_with_buffer(self):
         adapter = _make_adapter()
-        events_drained: List[SentinelEvent] = []
+        events_drained: list[SentinelEvent] = []
         errors = []
 
         def producer():
@@ -580,6 +617,7 @@ class TestBufferThreadSafety:
 # ---------------------------------------------------------------------------
 # TestSetup
 # ---------------------------------------------------------------------------
+
 
 class TestSetup:
     def test_setup_sets_provided_tracer(self):
@@ -676,10 +714,13 @@ class TestSetup:
         mock_haystack = MagicMock()
         mock_haystack.tracing = mock_tracing
 
-        with patch.dict("sys.modules", {
-            "haystack": mock_haystack,
-            "haystack.tracing": mock_tracing,
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "haystack": mock_haystack,
+                "haystack.tracing": mock_tracing,
+            },
+        ):
             adapter = _make_adapter()
             adapter.setup()  # no proxy_tracer — should use mock_tracing.tracer
         assert mock_tracer.provided_tracer is not None
@@ -689,12 +730,14 @@ class TestSetup:
 # TestOpToRaw
 # ---------------------------------------------------------------------------
 
+
 class TestOpToRaw:
     """Unit tests for the module-level _op_to_raw helper."""
 
     def setup_method(self):
         with patch("agentcop.adapters.haystack._require_haystack"):
             from agentcop.adapters.haystack import _op_to_raw
+
             self._op_to_raw = _op_to_raw
 
     def test_pipeline_start(self):
@@ -801,10 +844,12 @@ class TestOpToRaw:
 # TestComponentCategory
 # ---------------------------------------------------------------------------
 
+
 class TestComponentCategory:
     def setup_method(self):
         with patch("agentcop.adapters.haystack._require_haystack"):
             from agentcop.adapters.haystack import _component_category
+
             self._cc = _component_category
 
     def test_generator_is_llm(self):
@@ -830,10 +875,12 @@ class TestComponentCategory:
 # TestExtractModel
 # ---------------------------------------------------------------------------
 
+
 class TestExtractModel:
     def setup_method(self):
         with patch("agentcop.adapters.haystack._require_haystack"):
             from agentcop.adapters.haystack import _extract_model
+
             self._em = _extract_model
 
     def test_extracts_from_meta_list(self):
@@ -860,10 +907,12 @@ class TestExtractModel:
 # TestSpanProxy
 # ---------------------------------------------------------------------------
 
+
 class TestSpanProxy:
     def setup_method(self):
         with patch("agentcop.adapters.haystack._require_haystack"):
             from agentcop.adapters.haystack import _SpanProxy
+
             self._SpanProxy = _SpanProxy
 
     def test_set_tag_stores_value(self):
@@ -904,9 +953,11 @@ class TestSpanProxy:
 # TestProtocolConformance
 # ---------------------------------------------------------------------------
 
+
 class TestProtocolConformance:
     def test_adapter_conforms_to_sentinel_adapter_protocol(self):
         from agentcop.adapters import SentinelAdapter
+
         adapter = _make_adapter()
         assert isinstance(adapter, SentinelAdapter)
 
@@ -925,6 +976,7 @@ class TestProtocolConformance:
 # TestSentinelIntegration
 # ---------------------------------------------------------------------------
 
+
 class TestSentinelIntegration:
     def _make_sentinel_with_adapter(self, events, detectors=None):
         adapter = _make_adapter(run_id="integration")
@@ -936,6 +988,7 @@ class TestSentinelIntegration:
 
     def test_sentinel_ingests_all_events(self):
         from agentcop.violations import DEFAULT_DETECTORS
+
         sentinel = self._make_sentinel_with_adapter(
             [
                 {"type": "pipeline_started"},

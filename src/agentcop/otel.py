@@ -26,8 +26,9 @@ Example::
 
 from __future__ import annotations
 
-from datetime import timezone
-from typing import TYPE_CHECKING, List, Sequence
+from collections.abc import Sequence
+from datetime import UTC
+from typing import TYPE_CHECKING
 
 from .event import SentinelEvent
 
@@ -35,9 +36,9 @@ if TYPE_CHECKING:
     pass
 
 _SEVERITY_NUMBER_MAP = {
-    "INFO": 9,       # OTel SeverityNumber.INFO
-    "WARN": 13,      # OTel SeverityNumber.WARN
-    "ERROR": 17,     # OTel SeverityNumber.ERROR
+    "INFO": 9,  # OTel SeverityNumber.INFO
+    "WARN": 13,  # OTel SeverityNumber.WARN
+    "ERROR": 17,  # OTel SeverityNumber.ERROR
     "CRITICAL": 21,  # OTel SeverityNumber.FATAL
 }
 
@@ -83,18 +84,14 @@ def to_otel_log_record(event: SentinelEvent):
     Requires ``opentelemetry-sdk`` to be installed.
     """
     _require_otel()
-    from opentelemetry.sdk._logs import LogRecord  # type: ignore[import]
     from opentelemetry._logs.severity import SeverityNumber  # type: ignore[import]
+    from opentelemetry.sdk._logs import LogRecord  # type: ignore[import]
 
     severity_number_value = _SEVERITY_NUMBER_MAP.get(event.severity, 9)
     severity_number = SeverityNumber(severity_number_value)
 
-    timestamp_ns = int(
-        event.timestamp.astimezone(timezone.utc).timestamp() * 1_000_000_000
-    )
-    observed_ns = int(
-        event.observed_at.astimezone(timezone.utc).timestamp() * 1_000_000_000
-    )
+    timestamp_ns = int(event.timestamp.astimezone(UTC).timestamp() * 1_000_000_000)
+    observed_ns = int(event.observed_at.astimezone(UTC).timestamp() * 1_000_000_000)
 
     return LogRecord(
         timestamp=timestamp_ns,
@@ -130,7 +127,6 @@ class OtelSentinelExporter:
         instrumentation_name: str = "sentinel-core",
     ):
         _require_otel()
-        from opentelemetry.sdk._logs import LoggerProvider as _LP  # type: ignore[import]
         from opentelemetry._logs import get_logger_provider  # type: ignore[import]
 
         self._provider = logger_provider or get_logger_provider()

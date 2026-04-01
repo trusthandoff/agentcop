@@ -8,12 +8,10 @@ call the intercepted create_run / update_run directly.
 
 from __future__ import annotations
 
-import json
 import sys
 import threading
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -21,15 +19,16 @@ import pytest
 from agentcop import Sentinel, ViolationRecord
 from agentcop.event import SentinelEvent
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_adapter(run_id=None):
     """Return a LangSmithSentinelAdapter with the import guard bypassed."""
     with patch("agentcop.adapters.langsmith._require_langsmith"):
         from agentcop.adapters.langsmith import LangSmithSentinelAdapter
+
         return LangSmithSentinelAdapter(run_id=run_id)
 
 
@@ -49,9 +48,18 @@ def _setup_adapter(run_id=None):
     return adapter, client
 
 
-def _create_run(client, *, name="my-chain", run_type="chain", run_id=None,
-                trace_id=None, parent_run_id=None, inputs=None, tags=None,
-                extra=None):
+def _create_run(
+    client,
+    *,
+    name="my-chain",
+    run_type="chain",
+    run_id=None,
+    trace_id=None,
+    parent_run_id=None,
+    inputs=None,
+    tags=None,
+    extra=None,
+):
     """Call the intercepted create_run with common kwargs."""
     if run_id is None:
         run_id = str(uuid.uuid4())
@@ -84,12 +92,14 @@ def _update_run(client, run_id, *, outputs=None, error=None, extra=None):
 # TestRequireLangSmith
 # ---------------------------------------------------------------------------
 
+
 class TestRequireLangSmith:
     def test_raises_import_error_when_langsmith_missing(self):
         """_require_langsmith raises ImportError if langsmith not installed."""
         with patch.dict(sys.modules, {"langsmith": None}):
             with pytest.raises(ImportError, match="langsmith"):
                 from agentcop.adapters.langsmith import _require_langsmith
+
                 _require_langsmith()
 
     def test_passes_when_langsmith_available(self):
@@ -97,12 +107,14 @@ class TestRequireLangSmith:
         fake_langsmith = MagicMock()
         with patch.dict(sys.modules, {"langsmith": fake_langsmith}):
             from agentcop.adapters.langsmith import _require_langsmith
+
             _require_langsmith()  # must not raise
 
 
 # ---------------------------------------------------------------------------
 # TestAdapterInit
 # ---------------------------------------------------------------------------
+
 
 class TestAdapterInit:
     def test_source_system(self):
@@ -129,6 +141,7 @@ class TestAdapterInit:
 # ---------------------------------------------------------------------------
 # TestFromRunStarted
 # ---------------------------------------------------------------------------
+
 
 class TestFromRunStarted:
     def test_event_type(self):
@@ -193,24 +206,29 @@ class TestFromRunStarted:
 
     def test_attributes_metadata(self):
         adapter = _make_adapter()
-        ev = adapter.to_sentinel_event({
-            "type": "run_started",
-            "metadata": {"env": "prod"},
-        })
+        ev = adapter.to_sentinel_event(
+            {
+                "type": "run_started",
+                "metadata": {"env": "prod"},
+            }
+        )
         assert ev.attributes["metadata"] == {"env": "prod"}
 
     def test_attributes_parent_run_id(self):
         adapter = _make_adapter()
-        ev = adapter.to_sentinel_event({
-            "type": "run_started",
-            "parent_run_id": "parent-abc",
-        })
+        ev = adapter.to_sentinel_event(
+            {
+                "type": "run_started",
+                "parent_run_id": "parent-abc",
+            }
+        )
         assert ev.attributes["parent_run_id"] == "parent-abc"
 
 
 # ---------------------------------------------------------------------------
 # TestFromChainEvents
 # ---------------------------------------------------------------------------
+
 
 class TestFromChainEvents:
     def test_chain_finished_event_type(self):
@@ -250,27 +268,33 @@ class TestFromChainEvents:
 
     def test_chain_error_body_contains_error(self):
         adapter = _make_adapter()
-        ev = adapter.to_sentinel_event({
-            "type": "chain_error",
-            "run_name": "rag-chain",
-            "error": "context length exceeded",
-        })
+        ev = adapter.to_sentinel_event(
+            {
+                "type": "chain_error",
+                "run_name": "rag-chain",
+                "error": "context length exceeded",
+            }
+        )
         assert "context length exceeded" in ev.body
 
     def test_chain_finished_has_outputs(self):
         adapter = _make_adapter()
-        ev = adapter.to_sentinel_event({
-            "type": "chain_finished",
-            "outputs": '{"answer": "42"}',
-        })
+        ev = adapter.to_sentinel_event(
+            {
+                "type": "chain_finished",
+                "outputs": '{"answer": "42"}',
+            }
+        )
         assert ev.attributes["outputs"] == '{"answer": "42"}'
 
     def test_chain_error_has_error_attr(self):
         adapter = _make_adapter()
-        ev = adapter.to_sentinel_event({
-            "type": "chain_error",
-            "error": "timeout",
-        })
+        ev = adapter.to_sentinel_event(
+            {
+                "type": "chain_error",
+                "error": "timeout",
+            }
+        )
         assert ev.attributes["error"] == "timeout"
 
     def test_prompt_run_type_uses_chain_translator(self):
@@ -293,6 +317,7 @@ class TestFromChainEvents:
 # TestFromLLMEvents
 # ---------------------------------------------------------------------------
 
+
 class TestFromLLMEvents:
     def test_llm_finished_event_type(self):
         adapter = _make_adapter()
@@ -311,11 +336,13 @@ class TestFromLLMEvents:
 
     def test_llm_finished_body_contains_model(self):
         adapter = _make_adapter()
-        ev = adapter.to_sentinel_event({
-            "type": "llm_finished",
-            "run_name": "gpt-call",
-            "model": "gpt-4o-mini",
-        })
+        ev = adapter.to_sentinel_event(
+            {
+                "type": "llm_finished",
+                "run_name": "gpt-call",
+                "model": "gpt-4o-mini",
+            }
+        )
         assert "gpt-4o-mini" in ev.body
 
     def test_llm_error_event_type(self):
@@ -335,37 +362,45 @@ class TestFromLLMEvents:
 
     def test_llm_error_body_contains_error(self):
         adapter = _make_adapter()
-        ev = adapter.to_sentinel_event({
-            "type": "llm_error",
-            "run_name": "gpt-call",
-            "model": "gpt-4o-mini",
-            "error": "rate limit exceeded",
-        })
+        ev = adapter.to_sentinel_event(
+            {
+                "type": "llm_error",
+                "run_name": "gpt-call",
+                "model": "gpt-4o-mini",
+                "error": "rate limit exceeded",
+            }
+        )
         assert "rate limit exceeded" in ev.body
 
     def test_llm_attrs_model(self):
         adapter = _make_adapter()
-        ev = adapter.to_sentinel_event({
-            "type": "llm_finished",
-            "model": "gpt-4o",
-        })
+        ev = adapter.to_sentinel_event(
+            {
+                "type": "llm_finished",
+                "model": "gpt-4o",
+            }
+        )
         assert ev.attributes["model"] == "gpt-4o"
 
     def test_llm_attrs_provider(self):
         adapter = _make_adapter()
-        ev = adapter.to_sentinel_event({
-            "type": "llm_finished",
-            "provider": "openai",
-        })
+        ev = adapter.to_sentinel_event(
+            {
+                "type": "llm_finished",
+                "provider": "openai",
+            }
+        )
         assert ev.attributes["provider"] == "openai"
 
     def test_llm_attrs_usage(self):
         adapter = _make_adapter()
         usage = {"input_tokens": 10, "output_tokens": 20, "total_tokens": 30}
-        ev = adapter.to_sentinel_event({
-            "type": "llm_finished",
-            "usage": usage,
-        })
+        ev = adapter.to_sentinel_event(
+            {
+                "type": "llm_finished",
+                "usage": usage,
+            }
+        )
         assert ev.attributes["usage"] == usage
 
     def test_llm_attrs_defaults(self):
@@ -379,8 +414,13 @@ class TestFromLLMEvents:
         """usage_metadata in extra.metadata is picked up by the interceptor."""
         adapter, client = _setup_adapter()
         usage = {"input_tokens": 5, "output_tokens": 3, "total_tokens": 8}
-        extra = {"metadata": {"ls_model_name": "gpt-4o-mini", "ls_provider": "openai",
-                               "usage_metadata": usage}}
+        extra = {
+            "metadata": {
+                "ls_model_name": "gpt-4o-mini",
+                "ls_provider": "openai",
+                "usage_metadata": usage,
+            }
+        }
         run_id = _create_run(client, name="gpt-call", run_type="llm", extra=extra)
         _update_run(client, run_id, outputs={"text": "Hello"})
         events = adapter.drain()
@@ -393,6 +433,7 @@ class TestFromLLMEvents:
 # ---------------------------------------------------------------------------
 # TestFromToolEvents
 # ---------------------------------------------------------------------------
+
 
 class TestFromToolEvents:
     def test_tool_finished_event_type(self):
@@ -432,25 +473,30 @@ class TestFromToolEvents:
 
     def test_tool_error_body_contains_error(self):
         adapter = _make_adapter()
-        ev = adapter.to_sentinel_event({
-            "type": "tool_error",
-            "run_name": "search",
-            "error": "connection refused",
-        })
+        ev = adapter.to_sentinel_event(
+            {
+                "type": "tool_error",
+                "run_name": "search",
+                "error": "connection refused",
+            }
+        )
         assert "connection refused" in ev.body
 
     def test_tool_finished_has_outputs(self):
         adapter = _make_adapter()
-        ev = adapter.to_sentinel_event({
-            "type": "tool_finished",
-            "outputs": '{"results": []}',
-        })
+        ev = adapter.to_sentinel_event(
+            {
+                "type": "tool_finished",
+                "outputs": '{"results": []}',
+            }
+        )
         assert ev.attributes["outputs"] == '{"results": []}'
 
 
 # ---------------------------------------------------------------------------
 # TestFromRetrieverEvents
 # ---------------------------------------------------------------------------
+
 
 class TestFromRetrieverEvents:
     def test_retriever_finished_event_type(self):
@@ -490,17 +536,20 @@ class TestFromRetrieverEvents:
 
     def test_retriever_error_body_contains_error(self):
         adapter = _make_adapter()
-        ev = adapter.to_sentinel_event({
-            "type": "retriever_error",
-            "run_name": "faiss",
-            "error": "index not found",
-        })
+        ev = adapter.to_sentinel_event(
+            {
+                "type": "retriever_error",
+                "run_name": "faiss",
+                "error": "index not found",
+            }
+        )
         assert "index not found" in ev.body
 
 
 # ---------------------------------------------------------------------------
 # TestFromEmbeddingEvents
 # ---------------------------------------------------------------------------
+
 
 class TestFromEmbeddingEvents:
     def test_embedding_finished_event_type(self):
@@ -540,17 +589,20 @@ class TestFromEmbeddingEvents:
 
     def test_embedding_error_body_contains_error(self):
         adapter = _make_adapter()
-        ev = adapter.to_sentinel_event({
-            "type": "embedding_error",
-            "run_name": "ada-002",
-            "error": "quota exceeded",
-        })
+        ev = adapter.to_sentinel_event(
+            {
+                "type": "embedding_error",
+                "run_name": "ada-002",
+                "error": "quota exceeded",
+            }
+        )
         assert "quota exceeded" in ev.body
 
 
 # ---------------------------------------------------------------------------
 # TestFromUnknown
 # ---------------------------------------------------------------------------
+
 
 class TestFromUnknown:
     def test_unknown_event_type(self):
@@ -593,32 +645,39 @@ class TestFromUnknown:
 # TestTimestampParsing
 # ---------------------------------------------------------------------------
 
+
 class TestTimestampParsing:
     def test_iso_timestamp_parsed(self):
         adapter = _make_adapter()
-        ev = adapter.to_sentinel_event({
-            "type": "run_started",
-            "timestamp": "2024-01-15T10:30:00+00:00",
-        })
+        ev = adapter.to_sentinel_event(
+            {
+                "type": "run_started",
+                "timestamp": "2024-01-15T10:30:00+00:00",
+            }
+        )
         assert ev.timestamp.year == 2024
         assert ev.timestamp.month == 1
         assert ev.timestamp.day == 15
 
     def test_z_suffix_timestamp_parsed(self):
         adapter = _make_adapter()
-        ev = adapter.to_sentinel_event({
-            "type": "run_started",
-            "timestamp": "2024-06-01T12:00:00Z",
-        })
+        ev = adapter.to_sentinel_event(
+            {
+                "type": "run_started",
+                "timestamp": "2024-06-01T12:00:00Z",
+            }
+        )
         assert ev.timestamp.year == 2024
         assert ev.timestamp.month == 6
 
     def test_invalid_timestamp_falls_back_to_now(self):
         adapter = _make_adapter()
-        ev = adapter.to_sentinel_event({
-            "type": "run_started",
-            "timestamp": "not-a-date",
-        })
+        ev = adapter.to_sentinel_event(
+            {
+                "type": "run_started",
+                "timestamp": "not-a-date",
+            }
+        )
         assert isinstance(ev.timestamp, datetime)
 
     def test_missing_timestamp_falls_back_to_now(self):
@@ -630,6 +689,7 @@ class TestTimestampParsing:
 # ---------------------------------------------------------------------------
 # TestDrainFlush
 # ---------------------------------------------------------------------------
+
 
 class TestDrainFlush:
     def test_drain_returns_events(self):
@@ -678,6 +738,7 @@ class TestDrainFlush:
 # TestBufferThreadSafety
 # ---------------------------------------------------------------------------
 
+
 class TestBufferThreadSafety:
     def test_concurrent_buffer_writes(self):
         """Multiple threads can buffer events without data corruption."""
@@ -687,9 +748,7 @@ class TestBufferThreadSafety:
         def worker():
             try:
                 for _ in range(50):
-                    adapter._buffer_event(
-                        adapter.to_sentinel_event({"type": "run_started"})
-                    )
+                    adapter._buffer_event(adapter.to_sentinel_event({"type": "run_started"}))
             except Exception as exc:
                 errors.append(exc)
 
@@ -729,6 +788,7 @@ class TestBufferThreadSafety:
 # ---------------------------------------------------------------------------
 # TestSetup — intercept cycle tests
 # ---------------------------------------------------------------------------
+
 
 class TestSetup:
     def test_setup_wraps_create_run(self):
@@ -835,7 +895,6 @@ class TestSetup:
 
     def test_original_create_run_is_called(self):
         adapter, client = _setup_adapter()
-        original_mock = MagicMock()
         # Re-wrap: verify the original is forwarded
         adapter2 = _make_adapter()
         mock_client2 = _make_mock_client()
@@ -873,8 +932,7 @@ class TestSetup:
 
     def test_tags_propagated(self):
         adapter, client = _setup_adapter()
-        run_id = _create_run(client, name="chain", run_type="chain",
-                              tags=["prod", "v2"])
+        run_id = _create_run(client, name="chain", run_type="chain", tags=["prod", "v2"])
         _update_run(client, run_id, outputs={})
         events = adapter.drain()
         for ev in events:
@@ -937,34 +995,41 @@ class TestSetup:
 # TestSafeJson
 # ---------------------------------------------------------------------------
 
+
 class TestSafeJson:
     def test_none_returns_empty_string(self):
         from agentcop.adapters.langsmith import _safe_json
+
         assert _safe_json(None) == ""
 
     def test_string_passthrough(self):
         from agentcop.adapters.langsmith import _safe_json
+
         assert _safe_json("hello") == "hello"
 
     def test_string_truncated(self):
         from agentcop.adapters.langsmith import _safe_json
+
         long = "x" * 600
         assert len(_safe_json(long)) == 500
 
     def test_dict_serialized(self):
         from agentcop.adapters.langsmith import _safe_json
+
         result = _safe_json({"key": "value"})
         assert "key" in result
         assert "value" in result
 
     def test_dict_truncated_to_500(self):
         from agentcop.adapters.langsmith import _safe_json
+
         big = {"k" * i: "v" * 50 for i in range(1, 30)}
         result = _safe_json(big)
         assert len(result) <= 500
 
     def test_list_serialized(self):
         from agentcop.adapters.langsmith import _safe_json
+
         result = _safe_json([1, 2, 3])
         assert result == "[1, 2, 3]"
 
@@ -983,9 +1048,11 @@ class TestSafeJson:
 # TestProtocolConformance
 # ---------------------------------------------------------------------------
 
+
 class TestProtocolConformance:
     def test_is_sentinel_adapter(self):
         from agentcop.adapters.base import SentinelAdapter
+
         adapter = _make_adapter()
         assert isinstance(adapter, SentinelAdapter)
 
@@ -1008,6 +1075,7 @@ class TestProtocolConformance:
 # TestSentinelIntegration
 # ---------------------------------------------------------------------------
 
+
 class TestSentinelIntegration:
     def test_flush_into_sentinel_ingests_all_events(self):
         adapter, client = _setup_adapter(run_id="test-run")
@@ -1018,9 +1086,8 @@ class TestSentinelIntegration:
         assert len(sentinel._events) == 2  # run_started + chain_finished
 
     def test_custom_detector_fires_on_chain_error(self):
-        from typing import Optional
 
-        def detect_chain_failure(event: SentinelEvent) -> Optional[ViolationRecord]:
+        def detect_chain_failure(event: SentinelEvent) -> ViolationRecord | None:
             if event.event_type != "chain_error":
                 return None
             return ViolationRecord(
@@ -1041,9 +1108,8 @@ class TestSentinelIntegration:
         assert violations[0].violation_type == "chain_failed"
 
     def test_custom_detector_fires_on_llm_error(self):
-        from typing import Optional
 
-        def detect_llm_failure(event: SentinelEvent) -> Optional[ViolationRecord]:
+        def detect_llm_failure(event: SentinelEvent) -> ViolationRecord | None:
             if event.event_type != "llm_error":
                 return None
             return ViolationRecord(
@@ -1055,8 +1121,12 @@ class TestSentinelIntegration:
             )
 
         adapter, client = _setup_adapter(run_id="ci-run")
-        run_id = _create_run(client, name="gpt-call", run_type="llm",
-                              extra={"metadata": {"ls_model_name": "gpt-4o"}})
+        run_id = _create_run(
+            client,
+            name="gpt-call",
+            run_type="llm",
+            extra={"metadata": {"ls_model_name": "gpt-4o"}},
+        )
         _update_run(client, run_id, error="quota exceeded")
         sentinel = Sentinel(detectors=[detect_llm_failure])
         adapter.flush_into(sentinel)
@@ -1066,9 +1136,8 @@ class TestSentinelIntegration:
         assert violations[0].detail["model"] == "gpt-4o"
 
     def test_no_violations_on_clean_run(self):
-        from typing import Optional
 
-        def detect_errors(event: SentinelEvent) -> Optional[ViolationRecord]:
+        def detect_errors(event: SentinelEvent) -> ViolationRecord | None:
             if "error" not in event.event_type:
                 return None
             return ViolationRecord(
@@ -1101,10 +1170,10 @@ class TestSentinelIntegration:
     def test_mixed_run_types_in_pipeline(self):
         adapter, client = _setup_adapter(run_id="pipeline-run")
         chain_id = _create_run(client, name="rag-chain", run_type="chain")
-        retriever_id = _create_run(client, name="faiss", run_type="retriever",
-                                   parent_run_id=chain_id)
-        llm_id = _create_run(client, name="gpt-call", run_type="llm",
-                              parent_run_id=chain_id)
+        retriever_id = _create_run(
+            client, name="faiss", run_type="retriever", parent_run_id=chain_id
+        )
+        llm_id = _create_run(client, name="gpt-call", run_type="llm", parent_run_id=chain_id)
         _update_run(client, retriever_id, outputs={"docs": []})
         _update_run(client, llm_id, outputs={"text": "answer"})
         _update_run(client, chain_id, outputs={"answer": "answer"})

@@ -8,12 +8,10 @@ Return a ViolationRecord if the event represents a violation, None otherwise.
 Register custom detectors via Sentinel.register_detector().
 """
 
-from typing import Optional
-
 from .event import SentinelEvent, ViolationRecord
 
 
-def detect_rejected_packet(event: SentinelEvent) -> Optional[ViolationRecord]:
+def detect_rejected_packet(event: SentinelEvent) -> ViolationRecord | None:
     if event.event_type != "packet_rejected":
         return None
     return ViolationRecord(
@@ -28,7 +26,7 @@ def detect_rejected_packet(event: SentinelEvent) -> Optional[ViolationRecord]:
     )
 
 
-def detect_stale_capability(event: SentinelEvent) -> Optional[ViolationRecord]:
+def detect_stale_capability(event: SentinelEvent) -> ViolationRecord | None:
     if event.event_type != "capability_stale":
         return None
     return ViolationRecord(
@@ -43,7 +41,7 @@ def detect_stale_capability(event: SentinelEvent) -> Optional[ViolationRecord]:
     )
 
 
-def detect_overlap_window(event: SentinelEvent) -> Optional[ViolationRecord]:
+def detect_overlap_window(event: SentinelEvent) -> ViolationRecord | None:
     if event.event_type != "token_overlap_used":
         return None
     return ViolationRecord(
@@ -58,7 +56,7 @@ def detect_overlap_window(event: SentinelEvent) -> Optional[ViolationRecord]:
     )
 
 
-def detect_ai_generated_payload(event: SentinelEvent) -> Optional[ViolationRecord]:
+def detect_ai_generated_payload(event: SentinelEvent) -> ViolationRecord | None:
     if event.event_type != "ai_generated_payload":
         return None
     return ViolationRecord(

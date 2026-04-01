@@ -57,8 +57,8 @@ from __future__ import annotations
 
 import threading
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from agentcop.event import SentinelEvent
 
@@ -68,27 +68,62 @@ def _require_ddtrace() -> None:
         import ddtrace  # noqa: F401
     except ImportError as exc:
         raise ImportError(
-            "Datadog adapter requires 'ddtrace'. "
-            "Install it with: pip install agentcop[ddtrace]"
+            "Datadog adapter requires 'ddtrace'. Install it with: pip install agentcop[ddtrace]"
         ) from exc
 
 
 # Span component → event category mapping
-_LLM_COMPONENTS = frozenset({
-    "openai", "anthropic", "cohere", "langchain", "llamaindex",
-    "huggingface_hub", "bedrock", "vertexai", "ai21",
-    "google-generativeai", "mistral", "azureopenai",
-})
-_HTTP_COMPONENTS = frozenset({
-    "requests", "httpx", "urllib", "urllib3", "aiohttp",
-    "grpc", "tornado", "flask", "django", "fastapi",
-    "starlette", "aiohttp-client",
-})
-_DB_COMPONENTS = frozenset({
-    "sqlalchemy", "psycopg", "psycopg2", "pymongo", "redis",
-    "elasticsearch", "cassandra", "mysql-connector", "sqlite3",
-    "mongoengine", "pymemcache", "aiopg", "asyncpg", "motor", "aiomysql",
-})
+_LLM_COMPONENTS = frozenset(
+    {
+        "openai",
+        "anthropic",
+        "cohere",
+        "langchain",
+        "llamaindex",
+        "huggingface_hub",
+        "bedrock",
+        "vertexai",
+        "ai21",
+        "google-generativeai",
+        "mistral",
+        "azureopenai",
+    }
+)
+_HTTP_COMPONENTS = frozenset(
+    {
+        "requests",
+        "httpx",
+        "urllib",
+        "urllib3",
+        "aiohttp",
+        "grpc",
+        "tornado",
+        "flask",
+        "django",
+        "fastapi",
+        "starlette",
+        "aiohttp-client",
+    }
+)
+_DB_COMPONENTS = frozenset(
+    {
+        "sqlalchemy",
+        "psycopg",
+        "psycopg2",
+        "pymongo",
+        "redis",
+        "elasticsearch",
+        "cassandra",
+        "mysql-connector",
+        "sqlite3",
+        "mongoengine",
+        "pymemcache",
+        "aiopg",
+        "asyncpg",
+        "motor",
+        "aiomysql",
+    }
+)
 
 
 class DatadogSentinelAdapter:
@@ -137,10 +172,10 @@ class DatadogSentinelAdapter:
 
     source_system = "datadog"
 
-    def __init__(self, run_id: Optional[str] = None) -> None:
+    def __init__(self, run_id: str | None = None) -> None:
         _require_ddtrace()
         self._run_id = run_id
-        self._buffer: List[SentinelEvent] = []
+        self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
 
     def setup(self, tracer=None) -> None:
@@ -161,6 +196,7 @@ class DatadogSentinelAdapter:
         """
         if tracer is None:
             import ddtrace as _ddtrace  # type: ignore[import]
+
             tracer = _ddtrace.tracer
 
         writer = getattr(tracer, "_writer", None)
@@ -176,7 +212,7 @@ class DatadogSentinelAdapter:
         original_write = writer.write
 
         def _intercepted_write(spans):
-            for span in (spans or []):
+            for span in spans or []:
                 try:
                     raw = _span_to_raw(span)
                     adapter_self._buffer_event(adapter_self.to_sentinel_event(raw))
@@ -186,7 +222,7 @@ class DatadogSentinelAdapter:
 
         writer.write = _intercepted_write
 
-    def to_sentinel_event(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def to_sentinel_event(self, raw: dict[str, Any]) -> SentinelEvent:
         """
         Translate one Datadog span dict into a SentinelEvent.
 
@@ -195,19 +231,19 @@ class DatadogSentinelAdapter:
         with severity INFO.
         """
         dispatch = {
-            "span_finished":      self._from_span_finished,
-            "span_error":         self._from_span_error,
-            "llm_span_finished":  self._from_llm_span_finished,
-            "llm_span_error":     self._from_llm_span_error,
+            "span_finished": self._from_span_finished,
+            "span_error": self._from_span_error,
+            "llm_span_finished": self._from_llm_span_finished,
+            "llm_span_error": self._from_llm_span_error,
             "http_span_finished": self._from_http_span_finished,
-            "http_span_error":    self._from_http_span_error,
-            "db_span_finished":   self._from_db_span_finished,
-            "db_span_error":      self._from_db_span_error,
+            "http_span_error": self._from_http_span_error,
+            "db_span_finished": self._from_db_span_finished,
+            "db_span_error": self._from_db_span_error,
         }
         handler = dispatch.get(raw.get("type", ""), self._from_unknown)
         return handler(raw)
 
-    def drain(self) -> List[SentinelEvent]:
+    def drain(self) -> list[SentinelEvent]:
         """Return all buffered SentinelEvents and clear the buffer."""
         with self._lock:
             events = list(self._buffer)
@@ -230,20 +266,20 @@ class DatadogSentinelAdapter:
     # Timestamp helper
     # ------------------------------------------------------------------
 
-    def _parse_timestamp(self, raw: Dict[str, Any]) -> datetime:
+    def _parse_timestamp(self, raw: dict[str, Any]) -> datetime:
         ts = raw.get("timestamp")
         if ts:
             try:
                 return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
             except ValueError:
                 pass
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     # ------------------------------------------------------------------
     # Trace-ID helper: prefer run_id; fall back to Datadog trace ID
     # ------------------------------------------------------------------
 
-    def _trace_id(self, raw: Dict[str, Any]) -> Optional[str]:
+    def _trace_id(self, raw: dict[str, Any]) -> str | None:
         if self._run_id:
             return self._run_id
         dd = raw.get("dd_trace_id", "")
@@ -253,7 +289,7 @@ class DatadogSentinelAdapter:
     # Private translators — generic span
     # ------------------------------------------------------------------
 
-    def _from_span_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_span_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         span_name = raw.get("span_name", "unknown")
         service = raw.get("service", "unknown")
         return SentinelEvent(
@@ -267,7 +303,7 @@ class DatadogSentinelAdapter:
             attributes=self._common_attrs(raw),
         )
 
-    def _from_span_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_span_error(self, raw: dict[str, Any]) -> SentinelEvent:
         span_name = raw.get("span_name", "unknown")
         service = raw.get("service", "unknown")
         error_message = raw.get("error_message", "")
@@ -286,7 +322,7 @@ class DatadogSentinelAdapter:
     # Private translators — LLM span
     # ------------------------------------------------------------------
 
-    def _from_llm_span_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_llm_span_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         span_name = raw.get("span_name", "unknown")
         model = raw.get("model", "unknown")
         provider = raw.get("provider", raw.get("component", "unknown"))
@@ -301,7 +337,7 @@ class DatadogSentinelAdapter:
             attributes={**self._common_attrs(raw), **self._llm_attrs(raw)},
         )
 
-    def _from_llm_span_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_llm_span_error(self, raw: dict[str, Any]) -> SentinelEvent:
         span_name = raw.get("span_name", "unknown")
         model = raw.get("model", "unknown")
         provider = raw.get("provider", raw.get("component", "unknown"))
@@ -321,7 +357,7 @@ class DatadogSentinelAdapter:
     # Private translators — HTTP span
     # ------------------------------------------------------------------
 
-    def _from_http_span_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_http_span_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         span_name = raw.get("span_name", "unknown")
         http_url = raw.get("http_url", "")
         http_status = raw.get("http_status_code", "")
@@ -336,7 +372,7 @@ class DatadogSentinelAdapter:
             attributes={**self._common_attrs(raw), **self._http_attrs(raw)},
         )
 
-    def _from_http_span_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_http_span_error(self, raw: dict[str, Any]) -> SentinelEvent:
         span_name = raw.get("span_name", "unknown")
         http_url = raw.get("http_url", "")
         error_message = raw.get("error_message", "")
@@ -355,7 +391,7 @@ class DatadogSentinelAdapter:
     # Private translators — DB span
     # ------------------------------------------------------------------
 
-    def _from_db_span_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_db_span_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         span_name = raw.get("span_name", "unknown")
         component = raw.get("component", "unknown")
         return SentinelEvent(
@@ -369,7 +405,7 @@ class DatadogSentinelAdapter:
             attributes=self._common_attrs(raw),
         )
 
-    def _from_db_span_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_db_span_error(self, raw: dict[str, Any]) -> SentinelEvent:
         span_name = raw.get("span_name", "unknown")
         component = raw.get("component", "unknown")
         error_message = raw.get("error_message", "")
@@ -388,7 +424,7 @@ class DatadogSentinelAdapter:
     # Private translator — unknown
     # ------------------------------------------------------------------
 
-    def _from_unknown(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_unknown(self, raw: dict[str, Any]) -> SentinelEvent:
         original_type = raw.get("type", "unknown")
         return SentinelEvent(
             event_id=f"dd-unknown-{uuid.uuid4()}",
@@ -405,7 +441,7 @@ class DatadogSentinelAdapter:
     # Attribute helpers
     # ------------------------------------------------------------------
 
-    def _common_attrs(self, raw: Dict[str, Any]) -> Dict[str, Any]:
+    def _common_attrs(self, raw: dict[str, Any]) -> dict[str, Any]:
         return {
             "span_name": raw.get("span_name", ""),
             "resource": raw.get("resource", ""),
@@ -421,14 +457,14 @@ class DatadogSentinelAdapter:
             "duration_ns": int(raw.get("duration_ns", 0)),
         }
 
-    def _llm_attrs(self, raw: Dict[str, Any]) -> Dict[str, Any]:
+    def _llm_attrs(self, raw: dict[str, Any]) -> dict[str, Any]:
         return {
             "model": raw.get("model", "unknown"),
             "provider": raw.get("provider", raw.get("component", "unknown")),
             "usage": dict(raw.get("usage") or {}),
         }
 
-    def _http_attrs(self, raw: Dict[str, Any]) -> Dict[str, Any]:
+    def _http_attrs(self, raw: dict[str, Any]) -> dict[str, Any]:
         return {
             "http_url": raw.get("http_url", ""),
             "http_status_code": raw.get("http_status_code", ""),
@@ -440,12 +476,13 @@ class DatadogSentinelAdapter:
 # Module-level helpers — ddtrace Span → normalized dict
 # ---------------------------------------------------------------------------
 
-def _ns_to_iso(ns: Optional[int]) -> Optional[str]:
+
+def _ns_to_iso(ns: int | None) -> str | None:
     """Convert nanoseconds-since-epoch to an ISO 8601 string, or None."""
     if not ns:
         return None
     try:
-        return datetime.fromtimestamp(ns / 1e9, tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(ns / 1e9, tz=UTC).isoformat()
     except (OSError, OverflowError, ValueError):
         return None
 
@@ -459,7 +496,7 @@ def _get_tag(span, key: str, default: str = "") -> str:
         return default
 
 
-def _get_numeric(span, *keys: str) -> Optional[float]:
+def _get_numeric(span, *keys: str) -> float | None:
     """
     Try ``get_metric`` then ``get_tag`` for numeric fields across ddtrace
     versions. Returns the first non-None value found, or ``None``.
@@ -478,7 +515,7 @@ def _get_numeric(span, *keys: str) -> Optional[float]:
     return None
 
 
-def _span_to_raw(span) -> Dict[str, Any]:
+def _span_to_raw(span) -> dict[str, Any]:
     """
     Convert a finished ddtrace ``Span`` to a normalized event dict.
 
@@ -513,7 +550,7 @@ def _span_to_raw(span) -> Dict[str, Any]:
             # Heuristic: values > 1e13 are already nanoseconds
             start_ns = int(f) if f > 1e13 else int(f * 1e9)
 
-    raw: Dict[str, Any] = {
+    raw: dict[str, Any] = {
         "type": event_type,
         "span_name": str(getattr(span, "name", "") or ""),
         "resource": str(getattr(span, "resource", "") or ""),
@@ -542,15 +579,11 @@ def _span_to_raw(span) -> Dict[str, Any]:
         )
         raw["model"] = model
         raw["provider"] = component
-        pt = _get_numeric(span,
-                          "llm.usage.prompt_tokens",
-                          "openai.response.usage.prompt_tokens")
-        ct = _get_numeric(span,
-                          "llm.usage.completion_tokens",
-                          "openai.response.usage.completion_tokens")
-        tt = _get_numeric(span,
-                          "llm.usage.total_tokens",
-                          "openai.response.usage.total_tokens")
+        pt = _get_numeric(span, "llm.usage.prompt_tokens", "openai.response.usage.prompt_tokens")
+        ct = _get_numeric(
+            span, "llm.usage.completion_tokens", "openai.response.usage.completion_tokens"
+        )
+        tt = _get_numeric(span, "llm.usage.total_tokens", "openai.response.usage.total_tokens")
         raw["usage"] = {
             "prompt_tokens": int(pt) if pt is not None else 0,
             "completion_tokens": int(ct) if ct is not None else 0,

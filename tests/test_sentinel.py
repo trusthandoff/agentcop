@@ -2,8 +2,6 @@
 
 import threading
 
-import pytest
-
 from agentcop import Sentinel, SentinelEvent, ViolationRecord
 
 
@@ -94,12 +92,14 @@ class TestSentinelDetectViolations:
 
     def test_all_four_detectors_fire_simultaneously(self):
         s = Sentinel()
-        s.ingest([
-            make_event("packet_rejected", event_id="e1", severity="ERROR"),
-            make_event("capability_stale", event_id="e2", severity="ERROR"),
-            make_event("token_overlap_used", event_id="e3", severity="WARN"),
-            make_event("ai_generated_payload", event_id="e4", severity="WARN"),
-        ])
+        s.ingest(
+            [
+                make_event("packet_rejected", event_id="e1", severity="ERROR"),
+                make_event("capability_stale", event_id="e2", severity="ERROR"),
+                make_event("token_overlap_used", event_id="e3", severity="WARN"),
+                make_event("ai_generated_payload", event_id="e4", severity="WARN"),
+            ]
+        )
         violation_types = {v.violation_type for v in s.detect_violations()}
         assert violation_types == {
             "rejected_packet",
@@ -110,11 +110,13 @@ class TestSentinelDetectViolations:
 
     def test_mixed_events_only_matching_produces_violations(self):
         s = Sentinel()
-        s.ingest([
-            make_event("packet_rejected", event_id="e1", severity="ERROR"),
-            make_event("unrelated", event_id="e2"),
-            make_event("capability_stale", event_id="e3", severity="ERROR"),
-        ])
+        s.ingest(
+            [
+                make_event("packet_rejected", event_id="e1", severity="ERROR"),
+                make_event("unrelated", event_id="e2"),
+                make_event("capability_stale", event_id="e3", severity="ERROR"),
+            ]
+        )
         violations = s.detect_violations()
         assert len(violations) == 2
 
@@ -201,6 +203,7 @@ class TestSentinelDetectViolations:
     def test_default_sentinel_uses_all_four_default_detectors(self):
         s = Sentinel()
         from agentcop import DEFAULT_DETECTORS
+
         assert s._detectors == DEFAULT_DETECTORS
 
     def test_custom_detector_receiving_none_does_not_add_violation(self):
@@ -266,10 +269,12 @@ class TestThreadSafety:
     def test_concurrent_detect_violations_all_succeed(self):
         """50 threads calling detect_violations() simultaneously must all succeed."""
         s = Sentinel()
-        s.ingest([
-            make_event("packet_rejected", event_id="e1", severity="ERROR"),
-            make_event("capability_stale", event_id="e2", severity="ERROR"),
-        ])
+        s.ingest(
+            [
+                make_event("packet_rejected", event_id="e1", severity="ERROR"),
+                make_event("capability_stale", event_id="e2", severity="ERROR"),
+            ]
+        )
         results = []
         errors = []
 
@@ -308,10 +313,9 @@ class TestThreadSafety:
             except Exception as e:
                 errors.append(e)
 
-        threads = (
-            [threading.Thread(target=ingester, args=(i,)) for i in range(25)]
-            + [threading.Thread(target=detector) for _ in range(25)]
-        )
+        threads = [threading.Thread(target=ingester, args=(i,)) for i in range(25)] + [
+            threading.Thread(target=detector) for _ in range(25)
+        ]
         for t in threads:
             t.start()
         for t in threads:
@@ -357,10 +361,9 @@ class TestThreadSafety:
                 if not isinstance(result, list):
                     errors.append(f"non-list result: {type(result)}")
 
-        threads = (
-            [threading.Thread(target=flip) for _ in range(5)]
-            + [threading.Thread(target=check) for _ in range(5)]
-        )
+        threads = [threading.Thread(target=flip) for _ in range(5)] + [
+            threading.Thread(target=check) for _ in range(5)
+        ]
         for t in threads:
             t.start()
         for t in threads:

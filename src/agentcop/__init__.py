@@ -1,3 +1,4 @@
+from .adapters import SentinelAdapter
 from .event import SentinelEvent, ViolationRecord
 from .sentinel import Sentinel, ViolationDetector
 from .violations import (
@@ -7,7 +8,6 @@ from .violations import (
     detect_rejected_packet,
     detect_stale_capability,
 )
-from .adapters import SentinelAdapter
 
 __version__ = "0.2.0"
 

@@ -1,22 +1,23 @@
 """Tests for AutoGenSentinelAdapter. No autogen install required."""
 
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentcop import Sentinel, SentinelEvent
-
+from agentcop import Sentinel
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_adapter(run_id=None):
     """Construct an AutoGenSentinelAdapter with the autogen guard bypassed."""
     with patch("agentcop.adapters.autogen._require_autogen"):
         from agentcop.adapters.autogen import AutoGenSentinelAdapter
+
         return AutoGenSentinelAdapter(run_id=run_id)
 
 
@@ -34,9 +35,11 @@ def adapter_no_run():
 # Guard / import
 # ---------------------------------------------------------------------------
 
+
 class TestRequireAutoGen:
     def test_raises_import_error_when_both_packages_missing(self):
         import builtins
+
         real_import = builtins.__import__
 
         def mock_import(name, *args, **kwargs):
@@ -46,11 +49,13 @@ class TestRequireAutoGen:
 
         with patch("builtins.__import__", side_effect=mock_import):
             from agentcop.adapters.autogen import _require_autogen
+
             with pytest.raises(ImportError, match="pip install agentcop\\[autogen\\]"):
                 _require_autogen()
 
     def test_does_not_raise_when_autogen_present(self):
         import builtins
+
         real_import = builtins.__import__
 
         def mock_import(name, *args, **kwargs):
@@ -60,10 +65,12 @@ class TestRequireAutoGen:
 
         with patch("builtins.__import__", side_effect=mock_import):
             from agentcop.adapters.autogen import _require_autogen
+
             _require_autogen()
 
     def test_does_not_raise_when_autogen_agentchat_present(self):
         import builtins
+
         real_import = builtins.__import__
 
         def mock_import(name, *args, **kwargs):
@@ -75,11 +82,13 @@ class TestRequireAutoGen:
 
         with patch("builtins.__import__", side_effect=mock_import):
             from agentcop.adapters.autogen import _require_autogen
+
             _require_autogen()
 
     def test_constructor_calls_require_autogen(self):
         with patch("agentcop.adapters.autogen._require_autogen") as mock_guard:
             from agentcop.adapters.autogen import AutoGenSentinelAdapter
+
             AutoGenSentinelAdapter()
             mock_guard.assert_called_once()
 
@@ -87,6 +96,7 @@ class TestRequireAutoGen:
 # ---------------------------------------------------------------------------
 # Adapter init
 # ---------------------------------------------------------------------------
+
 
 class TestAdapterInit:
     def test_source_system_is_autogen(self, adapter):
@@ -107,35 +117,50 @@ class TestAdapterInit:
 # Conversation events
 # ---------------------------------------------------------------------------
 
+
 class TestFromConversationEvents:
     def test_conversation_started_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "conversation_started", "initiator": "user_proxy", "recipient": "assistant"})
+        e = adapter.to_sentinel_event(
+            {"type": "conversation_started", "initiator": "user_proxy", "recipient": "assistant"}
+        )
         assert e.event_type == "conversation_started"
 
     def test_conversation_started_severity_info(self, adapter):
-        e = adapter.to_sentinel_event({"type": "conversation_started", "initiator": "u", "recipient": "a"})
+        e = adapter.to_sentinel_event(
+            {"type": "conversation_started", "initiator": "u", "recipient": "a"}
+        )
         assert e.severity == "INFO"
 
     def test_conversation_started_body_contains_initiator_and_recipient(self, adapter):
-        e = adapter.to_sentinel_event({"type": "conversation_started", "initiator": "UserProxy", "recipient": "Assistant"})
+        e = adapter.to_sentinel_event(
+            {"type": "conversation_started", "initiator": "UserProxy", "recipient": "Assistant"}
+        )
         assert "UserProxy" in e.body
         assert "Assistant" in e.body
 
     def test_conversation_started_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "conversation_started", "initiator": "u", "recipient": "a"})
+        e = adapter.to_sentinel_event(
+            {"type": "conversation_started", "initiator": "u", "recipient": "a"}
+        )
         assert e.attributes["initiator"] == "u"
         assert e.attributes["recipient"] == "a"
 
     def test_conversation_started_event_id_prefixed(self, adapter):
-        e = adapter.to_sentinel_event({"type": "conversation_started", "initiator": "u", "recipient": "a"})
+        e = adapter.to_sentinel_event(
+            {"type": "conversation_started", "initiator": "u", "recipient": "a"}
+        )
         assert e.event_id.startswith("autogen-conv-")
 
     def test_conversation_started_source_system(self, adapter):
-        e = adapter.to_sentinel_event({"type": "conversation_started", "initiator": "u", "recipient": "a"})
+        e = adapter.to_sentinel_event(
+            {"type": "conversation_started", "initiator": "u", "recipient": "a"}
+        )
         assert e.source_system == "autogen"
 
     def test_conversation_started_trace_id(self, adapter):
-        e = adapter.to_sentinel_event({"type": "conversation_started", "initiator": "u", "recipient": "a"})
+        e = adapter.to_sentinel_event(
+            {"type": "conversation_started", "initiator": "u", "recipient": "a"}
+        )
         assert e.trace_id == "run-001"
 
     def test_conversation_started_defaults_unknown(self, adapter):
@@ -144,44 +169,69 @@ class TestFromConversationEvents:
         assert e.attributes["recipient"] == "unknown"
 
     def test_conversation_completed_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "conversation_completed", "initiator": "u", "message_count": 5})
+        e = adapter.to_sentinel_event(
+            {"type": "conversation_completed", "initiator": "u", "message_count": 5}
+        )
         assert e.event_type == "conversation_completed"
 
     def test_conversation_completed_severity_info(self, adapter):
-        e = adapter.to_sentinel_event({"type": "conversation_completed", "initiator": "u", "message_count": 3})
+        e = adapter.to_sentinel_event(
+            {"type": "conversation_completed", "initiator": "u", "message_count": 3}
+        )
         assert e.severity == "INFO"
 
     def test_conversation_completed_body_contains_count(self, adapter):
-        e = adapter.to_sentinel_event({"type": "conversation_completed", "initiator": "u", "message_count": 7})
+        e = adapter.to_sentinel_event(
+            {"type": "conversation_completed", "initiator": "u", "message_count": 7}
+        )
         assert "7" in e.body
 
     def test_conversation_completed_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "conversation_completed", "initiator": "u", "message_count": 4})
+        e = adapter.to_sentinel_event(
+            {"type": "conversation_completed", "initiator": "u", "message_count": 4}
+        )
         assert e.attributes["initiator"] == "u"
         assert e.attributes["message_count"] == 4
 
     def test_conversation_completed_content_included_when_present(self, adapter):
-        e = adapter.to_sentinel_event({"type": "conversation_completed", "initiator": "u", "message_count": 1, "content": "done"})
+        e = adapter.to_sentinel_event(
+            {
+                "type": "conversation_completed",
+                "initiator": "u",
+                "message_count": 1,
+                "content": "done",
+            }
+        )
         assert e.attributes["content"] == "done"
 
     def test_conversation_completed_content_absent_when_empty(self, adapter):
-        e = adapter.to_sentinel_event({"type": "conversation_completed", "initiator": "u", "message_count": 1})
+        e = adapter.to_sentinel_event(
+            {"type": "conversation_completed", "initiator": "u", "message_count": 1}
+        )
         assert "content" not in e.attributes
 
     def test_conversation_error_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "conversation_error", "initiator": "u", "error": "timeout"})
+        e = adapter.to_sentinel_event(
+            {"type": "conversation_error", "initiator": "u", "error": "timeout"}
+        )
         assert e.event_type == "conversation_error"
 
     def test_conversation_error_severity_error(self, adapter):
-        e = adapter.to_sentinel_event({"type": "conversation_error", "initiator": "u", "error": "timeout"})
+        e = adapter.to_sentinel_event(
+            {"type": "conversation_error", "initiator": "u", "error": "timeout"}
+        )
         assert e.severity == "ERROR"
 
     def test_conversation_error_body_contains_error(self, adapter):
-        e = adapter.to_sentinel_event({"type": "conversation_error", "initiator": "u", "error": "context limit exceeded"})
+        e = adapter.to_sentinel_event(
+            {"type": "conversation_error", "initiator": "u", "error": "context limit exceeded"}
+        )
         assert "context limit exceeded" in e.body
 
     def test_conversation_error_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "conversation_error", "initiator": "UserProxy", "error": "timeout"})
+        e = adapter.to_sentinel_event(
+            {"type": "conversation_error", "initiator": "UserProxy", "error": "timeout"}
+        )
         assert e.attributes["initiator"] == "UserProxy"
         assert e.attributes["error"] == "timeout"
 
@@ -190,27 +240,38 @@ class TestFromConversationEvents:
 # Message events
 # ---------------------------------------------------------------------------
 
+
 class TestFromMessageEvents:
     def test_message_sent_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "message_sent", "sender": "assistant", "content": "Hello"})
+        e = adapter.to_sentinel_event(
+            {"type": "message_sent", "sender": "assistant", "content": "Hello"}
+        )
         assert e.event_type == "message_sent"
 
     def test_message_sent_severity_info(self, adapter):
-        e = adapter.to_sentinel_event({"type": "message_sent", "sender": "assistant", "content": "Hi"})
+        e = adapter.to_sentinel_event(
+            {"type": "message_sent", "sender": "assistant", "content": "Hi"}
+        )
         assert e.severity == "INFO"
 
     def test_message_sent_body_contains_sender_and_content(self, adapter):
-        e = adapter.to_sentinel_event({"type": "message_sent", "sender": "ResearchAgent", "content": "Found results"})
+        e = adapter.to_sentinel_event(
+            {"type": "message_sent", "sender": "ResearchAgent", "content": "Found results"}
+        )
         assert "ResearchAgent" in e.body
         assert "Found results" in e.body
 
     def test_message_sent_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "message_sent", "sender": "agent", "content": "text"})
+        e = adapter.to_sentinel_event(
+            {"type": "message_sent", "sender": "agent", "content": "text"}
+        )
         assert e.attributes["sender"] == "agent"
         assert e.attributes["content"] == "text"
 
     def test_message_sent_role_included_when_present(self, adapter):
-        e = adapter.to_sentinel_event({"type": "message_sent", "sender": "a", "content": "c", "role": "assistant"})
+        e = adapter.to_sentinel_event(
+            {"type": "message_sent", "sender": "a", "content": "c", "role": "assistant"}
+        )
         assert e.attributes["role"] == "assistant"
 
     def test_message_sent_role_absent_when_empty(self, adapter):
@@ -226,20 +287,28 @@ class TestFromMessageEvents:
         assert e.trace_id == "run-001"
 
     def test_message_filtered_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "message_filtered", "sender": "agent", "reason": "profanity"})
+        e = adapter.to_sentinel_event(
+            {"type": "message_filtered", "sender": "agent", "reason": "profanity"}
+        )
         assert e.event_type == "message_filtered"
 
     def test_message_filtered_severity_warn(self, adapter):
-        e = adapter.to_sentinel_event({"type": "message_filtered", "sender": "agent", "reason": "policy"})
+        e = adapter.to_sentinel_event(
+            {"type": "message_filtered", "sender": "agent", "reason": "policy"}
+        )
         assert e.severity == "WARN"
 
     def test_message_filtered_body_contains_sender_and_reason(self, adapter):
-        e = adapter.to_sentinel_event({"type": "message_filtered", "sender": "EvilAgent", "reason": "harmful content"})
+        e = adapter.to_sentinel_event(
+            {"type": "message_filtered", "sender": "EvilAgent", "reason": "harmful content"}
+        )
         assert "EvilAgent" in e.body
         assert "harmful content" in e.body
 
     def test_message_filtered_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "message_filtered", "sender": "a", "reason": "r", "content": "blocked text"})
+        e = adapter.to_sentinel_event(
+            {"type": "message_filtered", "sender": "a", "reason": "r", "content": "blocked text"}
+        )
         assert e.attributes["sender"] == "a"
         assert e.attributes["reason"] == "r"
         assert e.attributes["content"] == "blocked text"
@@ -253,100 +322,139 @@ class TestFromMessageEvents:
 # Function call events
 # ---------------------------------------------------------------------------
 
+
 class TestFromFunctionCallEvents:
     def test_function_call_started_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "function_call_started", "sender": "assistant", "function_name": "search"})
+        e = adapter.to_sentinel_event(
+            {"type": "function_call_started", "sender": "assistant", "function_name": "search"}
+        )
         assert e.event_type == "function_call_started"
 
     def test_function_call_started_severity_info(self, adapter):
-        e = adapter.to_sentinel_event({"type": "function_call_started", "sender": "a", "function_name": "fn"})
+        e = adapter.to_sentinel_event(
+            {"type": "function_call_started", "sender": "a", "function_name": "fn"}
+        )
         assert e.severity == "INFO"
 
     def test_function_call_started_body_contains_sender_and_function(self, adapter):
-        e = adapter.to_sentinel_event({"type": "function_call_started", "sender": "ResearchAgent", "function_name": "web_search"})
+        e = adapter.to_sentinel_event(
+            {
+                "type": "function_call_started",
+                "sender": "ResearchAgent",
+                "function_name": "web_search",
+            }
+        )
         assert "ResearchAgent" in e.body
         assert "web_search" in e.body
 
     def test_function_call_started_attributes(self, adapter):
-        e = adapter.to_sentinel_event({
-            "type": "function_call_started",
-            "sender": "assistant",
-            "function_name": "calculator",
-            "arguments": '{"expr": "2+2"}',
-        })
+        e = adapter.to_sentinel_event(
+            {
+                "type": "function_call_started",
+                "sender": "assistant",
+                "function_name": "calculator",
+                "arguments": '{"expr": "2+2"}',
+            }
+        )
         assert e.attributes["sender"] == "assistant"
         assert e.attributes["function_name"] == "calculator"
         assert e.attributes["arguments"] == '{"expr": "2+2"}'
 
     def test_function_call_started_tool_call_id_included_when_present(self, adapter):
-        e = adapter.to_sentinel_event({
-            "type": "function_call_started",
-            "sender": "a",
-            "function_name": "fn",
-            "tool_call_id": "call-abc",
-        })
+        e = adapter.to_sentinel_event(
+            {
+                "type": "function_call_started",
+                "sender": "a",
+                "function_name": "fn",
+                "tool_call_id": "call-abc",
+            }
+        )
         assert e.attributes["tool_call_id"] == "call-abc"
 
     def test_function_call_started_tool_call_id_absent_when_empty(self, adapter):
-        e = adapter.to_sentinel_event({"type": "function_call_started", "sender": "a", "function_name": "fn"})
+        e = adapter.to_sentinel_event(
+            {"type": "function_call_started", "sender": "a", "function_name": "fn"}
+        )
         assert "tool_call_id" not in e.attributes
 
     def test_function_call_started_event_id_prefixed(self, adapter):
-        e = adapter.to_sentinel_event({"type": "function_call_started", "sender": "a", "function_name": "fn"})
+        e = adapter.to_sentinel_event(
+            {"type": "function_call_started", "sender": "a", "function_name": "fn"}
+        )
         assert e.event_id.startswith("autogen-func-")
 
     def test_function_call_completed_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "function_call_completed", "function_name": "search", "result": "found"})
+        e = adapter.to_sentinel_event(
+            {"type": "function_call_completed", "function_name": "search", "result": "found"}
+        )
         assert e.event_type == "function_call_completed"
 
     def test_function_call_completed_severity_info(self, adapter):
-        e = adapter.to_sentinel_event({"type": "function_call_completed", "function_name": "fn", "result": "ok"})
+        e = adapter.to_sentinel_event(
+            {"type": "function_call_completed", "function_name": "fn", "result": "ok"}
+        )
         assert e.severity == "INFO"
 
     def test_function_call_completed_body_contains_function_name(self, adapter):
-        e = adapter.to_sentinel_event({"type": "function_call_completed", "function_name": "web_search", "result": "results"})
+        e = adapter.to_sentinel_event(
+            {"type": "function_call_completed", "function_name": "web_search", "result": "results"}
+        )
         assert "web_search" in e.body
 
     def test_function_call_completed_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "function_call_completed", "function_name": "fn", "result": "42"})
+        e = adapter.to_sentinel_event(
+            {"type": "function_call_completed", "function_name": "fn", "result": "42"}
+        )
         assert e.attributes["function_name"] == "fn"
         assert e.attributes["result"] == "42"
 
     def test_function_call_completed_tool_call_id_included(self, adapter):
-        e = adapter.to_sentinel_event({
-            "type": "function_call_completed",
-            "function_name": "fn",
-            "result": "r",
-            "tool_call_id": "call-xyz",
-        })
+        e = adapter.to_sentinel_event(
+            {
+                "type": "function_call_completed",
+                "function_name": "fn",
+                "result": "r",
+                "tool_call_id": "call-xyz",
+            }
+        )
         assert e.attributes["tool_call_id"] == "call-xyz"
 
     def test_function_call_error_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "function_call_error", "function_name": "fn", "error": "503"})
+        e = adapter.to_sentinel_event(
+            {"type": "function_call_error", "function_name": "fn", "error": "503"}
+        )
         assert e.event_type == "function_call_error"
 
     def test_function_call_error_severity_error(self, adapter):
-        e = adapter.to_sentinel_event({"type": "function_call_error", "function_name": "fn", "error": "503"})
+        e = adapter.to_sentinel_event(
+            {"type": "function_call_error", "function_name": "fn", "error": "503"}
+        )
         assert e.severity == "ERROR"
 
     def test_function_call_error_body_contains_function_and_error(self, adapter):
-        e = adapter.to_sentinel_event({"type": "function_call_error", "function_name": "web_search", "error": "rate limited"})
+        e = adapter.to_sentinel_event(
+            {"type": "function_call_error", "function_name": "web_search", "error": "rate limited"}
+        )
         assert "web_search" in e.body
         assert "rate limited" in e.body
 
     def test_function_call_error_attributes(self, adapter):
-        e = adapter.to_sentinel_event({
-            "type": "function_call_error",
-            "sender": "ResearchAgent",
-            "function_name": "web_search",
-            "error": "429 Too Many Requests",
-        })
+        e = adapter.to_sentinel_event(
+            {
+                "type": "function_call_error",
+                "sender": "ResearchAgent",
+                "function_name": "web_search",
+                "error": "429 Too Many Requests",
+            }
+        )
         assert e.attributes["sender"] == "ResearchAgent"
         assert e.attributes["function_name"] == "web_search"
         assert e.attributes["error"] == "429 Too Many Requests"
 
     def test_function_call_error_event_id_prefixed(self, adapter):
-        e = adapter.to_sentinel_event({"type": "function_call_error", "function_name": "fn", "error": "oops"})
+        e = adapter.to_sentinel_event(
+            {"type": "function_call_error", "function_name": "fn", "error": "oops"}
+        )
         assert e.event_id.startswith("autogen-func-")
 
     def test_missing_function_name_defaults_to_unknown(self, adapter):
@@ -357,6 +465,7 @@ class TestFromFunctionCallEvents:
 # ---------------------------------------------------------------------------
 # Agent reply events
 # ---------------------------------------------------------------------------
+
 
 class TestFromAgentReplyEvents:
     def test_agent_reply_started_event_type(self, adapter):
@@ -380,20 +489,28 @@ class TestFromAgentReplyEvents:
         assert e.event_id.startswith("autogen-agent-")
 
     def test_agent_reply_completed_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_reply_completed", "agent": "a", "content": "done"})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_reply_completed", "agent": "a", "content": "done"}
+        )
         assert e.event_type == "agent_reply_completed"
 
     def test_agent_reply_completed_severity_info(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_reply_completed", "agent": "a", "content": "done"})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_reply_completed", "agent": "a", "content": "done"}
+        )
         assert e.severity == "INFO"
 
     def test_agent_reply_completed_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_reply_completed", "agent": "Writer", "content": "article text"})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_reply_completed", "agent": "Writer", "content": "article text"}
+        )
         assert e.attributes["agent"] == "Writer"
         assert e.attributes["content"] == "article text"
 
     def test_agent_reply_error_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_reply_error", "agent": "a", "error": "LLM timeout"})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_reply_error", "agent": "a", "error": "LLM timeout"}
+        )
         assert e.event_type == "agent_reply_error"
 
     def test_agent_reply_error_severity_error(self, adapter):
@@ -401,12 +518,16 @@ class TestFromAgentReplyEvents:
         assert e.severity == "ERROR"
 
     def test_agent_reply_error_body_contains_agent_and_error(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_reply_error", "agent": "PlannerAgent", "error": "LLM timeout"})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_reply_error", "agent": "PlannerAgent", "error": "LLM timeout"}
+        )
         assert "PlannerAgent" in e.body
         assert "LLM timeout" in e.body
 
     def test_agent_reply_error_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_reply_error", "agent": "Coder", "error": "SyntaxError"})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_reply_error", "agent": "Coder", "error": "SyntaxError"}
+        )
         assert e.attributes["agent"] == "Coder"
         assert e.attributes["error"] == "SyntaxError"
 
@@ -426,6 +547,7 @@ class TestFromAgentReplyEvents:
 # ---------------------------------------------------------------------------
 # Unknown events
 # ---------------------------------------------------------------------------
+
 
 class TestFromUnknown:
     def test_unknown_type_gives_unknown_autogen_event(self, adapter):
@@ -465,40 +587,49 @@ class TestFromUnknown:
 # Timestamp parsing
 # ---------------------------------------------------------------------------
 
+
 class TestTimestampParsing:
     def test_iso_z_suffix_parsed(self, adapter):
-        e = adapter.to_sentinel_event({
-            "type": "conversation_started",
-            "initiator": "u",
-            "recipient": "a",
-            "timestamp": "2026-06-01T12:00:00Z",
-        })
-        assert e.timestamp == datetime(2026, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+        e = adapter.to_sentinel_event(
+            {
+                "type": "conversation_started",
+                "initiator": "u",
+                "recipient": "a",
+                "timestamp": "2026-06-01T12:00:00Z",
+            }
+        )
+        assert e.timestamp == datetime(2026, 6, 1, 12, 0, 0, tzinfo=UTC)
 
     def test_iso_offset_parsed(self, adapter):
-        e = adapter.to_sentinel_event({
-            "type": "conversation_started",
-            "initiator": "u",
-            "recipient": "a",
-            "timestamp": "2026-06-01T12:00:00+00:00",
-        })
+        e = adapter.to_sentinel_event(
+            {
+                "type": "conversation_started",
+                "initiator": "u",
+                "recipient": "a",
+                "timestamp": "2026-06-01T12:00:00+00:00",
+            }
+        )
         assert e.timestamp.year == 2026
 
     def test_missing_timestamp_uses_now(self, adapter):
-        before = datetime.now(timezone.utc)
-        e = adapter.to_sentinel_event({"type": "conversation_started", "initiator": "u", "recipient": "a"})
-        after = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
+        e = adapter.to_sentinel_event(
+            {"type": "conversation_started", "initiator": "u", "recipient": "a"}
+        )
+        after = datetime.now(UTC)
         assert before <= e.timestamp <= after
 
     def test_invalid_timestamp_falls_back_to_now(self, adapter):
-        before = datetime.now(timezone.utc)
-        e = adapter.to_sentinel_event({
-            "type": "conversation_started",
-            "initiator": "u",
-            "recipient": "a",
-            "timestamp": "not-a-date",
-        })
-        after = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
+        e = adapter.to_sentinel_event(
+            {
+                "type": "conversation_started",
+                "initiator": "u",
+                "recipient": "a",
+                "timestamp": "not-a-date",
+            }
+        )
+        after = datetime.now(UTC)
         assert before <= e.timestamp <= after
 
 
@@ -506,13 +637,22 @@ class TestTimestampParsing:
 # drain() and flush_into()
 # ---------------------------------------------------------------------------
 
+
 class TestDrainFlush:
     def _push(self, adapter, *types):
         for t in types:
             adapter._buffer_event(
-                adapter.to_sentinel_event({"type": t, "initiator": "u", "recipient": "a",
-                                           "sender": "a", "content": "x",
-                                           "function_name": "fn", "agent": "a"})
+                adapter.to_sentinel_event(
+                    {
+                        "type": t,
+                        "initiator": "u",
+                        "recipient": "a",
+                        "sender": "a",
+                        "content": "x",
+                        "function_name": "fn",
+                        "agent": "a",
+                    }
+                )
             )
 
     def test_drain_returns_buffered_events(self, adapter):
@@ -565,6 +705,7 @@ class TestDrainFlush:
 # Buffer thread safety
 # ---------------------------------------------------------------------------
 
+
 class TestBufferThreadSafety:
     def test_concurrent_buffer_event_does_not_corrupt(self, adapter):
         errors = []
@@ -572,7 +713,9 @@ class TestBufferThreadSafety:
         def worker(i):
             try:
                 adapter._buffer_event(
-                    adapter.to_sentinel_event({"type": "message_sent", "sender": f"agent-{i}", "content": f"msg-{i}"})
+                    adapter.to_sentinel_event(
+                        {"type": "message_sent", "sender": f"agent-{i}", "content": f"msg-{i}"}
+                    )
                 )
             except Exception as e:
                 errors.append(e)
@@ -592,7 +735,9 @@ class TestBufferThreadSafety:
         def bufferer(i):
             try:
                 adapter._buffer_event(
-                    adapter.to_sentinel_event({"type": "message_sent", "sender": f"a-{i}", "content": f"m-{i}"})
+                    adapter.to_sentinel_event(
+                        {"type": "message_sent", "sender": f"a-{i}", "content": f"m-{i}"}
+                    )
                 )
             except Exception as e:
                 errors.append(e)
@@ -603,10 +748,9 @@ class TestBufferThreadSafety:
             except Exception as e:
                 errors.append(e)
 
-        threads = (
-            [threading.Thread(target=bufferer, args=(i,)) for i in range(25)]
-            + [threading.Thread(target=drainer) for _ in range(25)]
-        )
+        threads = [threading.Thread(target=bufferer, args=(i,)) for i in range(25)] + [
+            threading.Thread(target=drainer) for _ in range(25)
+        ]
         for t in threads:
             t.start()
         for t in threads:
@@ -618,6 +762,7 @@ class TestBufferThreadSafety:
 # ---------------------------------------------------------------------------
 # iter_messages — AutoGen 0.2.x native format
 # ---------------------------------------------------------------------------
+
 
 class TestIterMessagesV2:
     def test_user_message_becomes_message_sent(self, adapter):
@@ -642,22 +787,26 @@ class TestIterMessagesV2:
         assert e.attributes["role"] == "assistant"
 
     def test_function_call_request_becomes_function_call_started(self, adapter):
-        msgs = [{
-            "role": "assistant",
-            "name": "assistant",
-            "content": None,
-            "function_call": {"name": "web_search", "arguments": '{"query": "test"}'},
-        }]
+        msgs = [
+            {
+                "role": "assistant",
+                "name": "assistant",
+                "content": None,
+                "function_call": {"name": "web_search", "arguments": '{"query": "test"}'},
+            }
+        ]
         events = list(adapter.iter_messages(msgs))
         assert events[0].event_type == "function_call_started"
         assert events[0].attributes["function_name"] == "web_search"
 
     def test_function_call_arguments_preserved(self, adapter):
-        msgs = [{
-            "role": "assistant",
-            "name": "assistant",
-            "function_call": {"name": "add", "arguments": '{"a": 1, "b": 2}'},
-        }]
+        msgs = [
+            {
+                "role": "assistant",
+                "name": "assistant",
+                "function_call": {"name": "add", "arguments": '{"a": 1, "b": 2}'},
+            }
+        ]
         e = list(adapter.iter_messages(msgs))[0]
         assert e.attributes["arguments"] == '{"a": 1, "b": 2}'
 
@@ -673,13 +822,18 @@ class TestIterMessagesV2:
         assert e.event_type == "function_call_error"
 
     def test_tool_calls_list_becomes_function_call_started(self, adapter):
-        msgs = [{
-            "role": "assistant",
-            "name": "assistant",
-            "tool_calls": [
-                {"id": "call-1", "function": {"name": "calculator", "arguments": '{"expr":"2+2"}'}}
-            ],
-        }]
+        msgs = [
+            {
+                "role": "assistant",
+                "name": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "call-1",
+                        "function": {"name": "calculator", "arguments": '{"expr":"2+2"}'},
+                    }
+                ],
+            }
+        ]
         e = list(adapter.iter_messages(msgs))[0]
         assert e.event_type == "function_call_started"
         assert e.attributes["function_name"] == "calculator"
@@ -694,7 +848,11 @@ class TestIterMessagesV2:
     def test_full_v2_conversation_yields_all_events(self, adapter):
         msgs = [
             {"role": "user", "content": "Compute 2+2", "name": "user_proxy"},
-            {"role": "assistant", "name": "assistant", "function_call": {"name": "add", "arguments": '{"a":2,"b":2}'}},
+            {
+                "role": "assistant",
+                "name": "assistant",
+                "function_call": {"name": "add", "arguments": '{"a":2,"b":2}'},
+            },
             {"role": "function", "name": "add", "content": "4"},
             {"role": "assistant", "content": "The answer is 4.", "name": "assistant"},
         ]
@@ -716,6 +874,7 @@ class TestIterMessagesV2:
 # iter_messages — AutoGen 0.4.x native format
 # ---------------------------------------------------------------------------
 
+
 class TestIterMessagesV4:
     def test_text_message_becomes_message_sent(self, adapter):
         msgs = [{"type": "TextMessage", "source": "assistant", "content": "Hello"}]
@@ -724,41 +883,55 @@ class TestIterMessagesV4:
         assert e.attributes["sender"] == "assistant"
 
     def test_tool_call_request_becomes_function_call_started(self, adapter):
-        msgs = [{
-            "type": "ToolCallRequestEvent",
-            "source": "assistant",
-            "content": [{"id": "c1", "name": "search", "arguments": '{"q":"test"}'}],
-        }]
+        msgs = [
+            {
+                "type": "ToolCallRequestEvent",
+                "source": "assistant",
+                "content": [{"id": "c1", "name": "search", "arguments": '{"q":"test"}'}],
+            }
+        ]
         e = list(adapter.iter_messages(msgs))[0]
         assert e.event_type == "function_call_started"
         assert e.attributes["function_name"] == "search"
         assert e.attributes["tool_call_id"] == "c1"
 
     def test_tool_execution_success_becomes_function_call_completed(self, adapter):
-        msgs = [{
-            "type": "ToolCallExecutionEvent",
-            "source": "tool",
-            "content": [{"call_id": "c1", "content": "result data"}],
-        }]
+        msgs = [
+            {
+                "type": "ToolCallExecutionEvent",
+                "source": "tool",
+                "content": [{"call_id": "c1", "content": "result data"}],
+            }
+        ]
         e = list(adapter.iter_messages(msgs))[0]
         assert e.event_type == "function_call_completed"
 
     def test_tool_execution_error_becomes_function_call_error(self, adapter):
-        msgs = [{
-            "type": "ToolCallExecutionEvent",
-            "source": "tool",
-            "content": [{"call_id": "c1", "content": "Error: service unavailable"}],
-        }]
+        msgs = [
+            {
+                "type": "ToolCallExecutionEvent",
+                "source": "tool",
+                "content": [{"call_id": "c1", "content": "Error: service unavailable"}],
+            }
+        ]
         e = list(adapter.iter_messages(msgs))[0]
         assert e.event_type == "function_call_error"
 
     def test_stop_message_becomes_conversation_completed(self, adapter):
-        msgs = [{"type": "StopMessage", "source": "termination_handler", "content": "Max rounds reached"}]
+        msgs = [
+            {
+                "type": "StopMessage",
+                "source": "termination_handler",
+                "content": "Max rounds reached",
+            }
+        ]
         e = list(adapter.iter_messages(msgs))[0]
         assert e.event_type == "conversation_completed"
 
     def test_handoff_message_becomes_message_sent(self, adapter):
-        msgs = [{"type": "HandoffMessage", "source": "agent_a", "content": "Passing to specialist"}]
+        msgs = [
+            {"type": "HandoffMessage", "source": "agent_a", "content": "Passing to specialist"}
+        ]
         e = list(adapter.iter_messages(msgs))[0]
         assert e.event_type == "message_sent"
         assert "[handoff]" in e.attributes["content"]
@@ -778,9 +951,11 @@ class TestIterMessagesV4:
 # Protocol conformance
 # ---------------------------------------------------------------------------
 
+
 class TestProtocolConformance:
     def test_satisfies_sentinel_adapter_protocol(self, adapter):
         from agentcop import SentinelAdapter
+
         assert isinstance(adapter, SentinelAdapter)
 
     def test_source_system_attribute(self, adapter):
@@ -794,13 +969,19 @@ class TestProtocolConformance:
 # Integration with Sentinel
 # ---------------------------------------------------------------------------
 
+
 class TestSentinelIntegration:
     def test_all_error_events_collected(self, adapter):
         sentinel = Sentinel()
 
         for raw in [
             {"type": "conversation_error", "initiator": "u", "error": "timeout"},
-            {"type": "function_call_error", "function_name": "search", "error": "403", "sender": "a"},
+            {
+                "type": "function_call_error",
+                "function_name": "search",
+                "error": "403",
+                "sender": "a",
+            },
             {"type": "agent_reply_error", "agent": "Planner", "error": "context limit"},
         ]:
             adapter._buffer_event(adapter.to_sentinel_event(raw))
@@ -825,12 +1006,16 @@ class TestSentinelIntegration:
                     },
                 )
 
-        adapter._buffer_event(adapter.to_sentinel_event({
-            "type": "function_call_error",
-            "sender": "assistant",
-            "function_name": "web_search",
-            "error": "rate limit exceeded",
-        }))
+        adapter._buffer_event(
+            adapter.to_sentinel_event(
+                {
+                    "type": "function_call_error",
+                    "sender": "assistant",
+                    "function_name": "web_search",
+                    "error": "rate limit exceeded",
+                }
+            )
+        )
 
         sentinel = Sentinel(detectors=[detect_func_error])
         adapter.flush_into(sentinel)
@@ -857,12 +1042,16 @@ class TestSentinelIntegration:
                     },
                 )
 
-        adapter._buffer_event(adapter.to_sentinel_event({
-            "type": "message_filtered",
-            "sender": "EvilAgent",
-            "reason": "harmful content",
-            "content": "do bad things",
-        }))
+        adapter._buffer_event(
+            adapter.to_sentinel_event(
+                {
+                    "type": "message_filtered",
+                    "sender": "EvilAgent",
+                    "reason": "harmful content",
+                    "content": "do bad things",
+                }
+            )
+        )
 
         sentinel = Sentinel(detectors=[detect_filtered])
         adapter.flush_into(sentinel)
@@ -887,8 +1076,16 @@ class TestSentinelIntegration:
 
         history = [
             {"role": "user", "content": "search for AI news", "name": "user_proxy"},
-            {"role": "assistant", "name": "assistant", "function_call": {"name": "web_search", "arguments": "{}"}},
-            {"role": "function", "name": "web_search", "content": "Error: 429 rate limit exceeded"},
+            {
+                "role": "assistant",
+                "name": "assistant",
+                "function_call": {"name": "web_search", "arguments": "{}"},
+            },
+            {
+                "role": "function",
+                "name": "web_search",
+                "content": "Error: 429 rate limit exceeded",
+            },
         ]
 
         sentinel = Sentinel(detectors=[detect_func_error])

@@ -1,10 +1,8 @@
 """Tests for the four built-in violation detectors and DEFAULT_DETECTORS."""
 
-import pytest
-
-from agentcop import SentinelEvent
 from agentcop import (
     DEFAULT_DETECTORS,
+    SentinelEvent,
     detect_ai_generated_payload,
     detect_overlap_window,
     detect_rejected_packet,
@@ -110,7 +108,9 @@ class TestDetectStaleCapability:
 
 class TestDetectOverlapWindow:
     def test_fires_on_token_overlap_used(self):
-        e = make_event("token_overlap_used", {"packet_id": "pkt-2", "reason": "replay"}, severity="WARN")
+        e = make_event(
+            "token_overlap_used", {"packet_id": "pkt-2", "reason": "replay"}, severity="WARN"
+        )
         v = detect_overlap_window(e)
         assert v is not None
 
@@ -131,7 +131,9 @@ class TestDetectOverlapWindow:
         assert detect_overlap_window(e).trace_id == "trace-111"
 
     def test_detail_contains_packet_id_and_reason(self):
-        e = make_event("token_overlap_used", {"packet_id": "pkt-ov", "reason": "window"}, severity="WARN")
+        e = make_event(
+            "token_overlap_used", {"packet_id": "pkt-ov", "reason": "window"}, severity="WARN"
+        )
         v = detect_overlap_window(e)
         assert v.detail["packet_id"] == "pkt-ov"
         assert v.detail["reason"] == "window"

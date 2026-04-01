@@ -11,24 +11,24 @@ from __future__ import annotations
 import asyncio
 import sys
 import threading
-from datetime import datetime, timezone
-from typing import List
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC, datetime
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from agentcop import Sentinel, ViolationRecord
 from agentcop.event import SentinelEvent
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_adapter(run_id=None):
     """Return a SemanticKernelSentinelAdapter with the import guard bypassed."""
     with patch("agentcop.adapters.semantic_kernel._require_semantic_kernel"):
         from agentcop.adapters.semantic_kernel import SemanticKernelSentinelAdapter
+
         return SemanticKernelSentinelAdapter(run_id=run_id)
 
 
@@ -122,12 +122,14 @@ def _get_registered_filters(mock_kernel):
 # TestRequireSemanticKernel
 # ---------------------------------------------------------------------------
 
+
 class TestRequireSemanticKernel:
     def test_raises_when_sk_missing(self):
         with patch.dict("sys.modules", {"semantic_kernel": None}):
             if "agentcop.adapters.semantic_kernel" in sys.modules:
                 del sys.modules["agentcop.adapters.semantic_kernel"]
             from agentcop.adapters.semantic_kernel import _require_semantic_kernel
+
             with pytest.raises(ImportError, match="semantic-kernel"):
                 _require_semantic_kernel()
 
@@ -135,14 +137,18 @@ class TestRequireSemanticKernel:
         mock_sk = MagicMock()
         with patch.dict("sys.modules", {"semantic_kernel": mock_sk}):
             from agentcop.adapters.semantic_kernel import _require_semantic_kernel
+
             _require_semantic_kernel()  # no exception
 
     def test_constructor_calls_require(self):
         called = []
+
         def fake_require():
             called.append(True)
+
         with patch("agentcop.adapters.semantic_kernel._require_semantic_kernel", fake_require):
             from agentcop.adapters.semantic_kernel import SemanticKernelSentinelAdapter
+
             SemanticKernelSentinelAdapter()
         assert called == [True]
 
@@ -150,6 +156,7 @@ class TestRequireSemanticKernel:
 # ---------------------------------------------------------------------------
 # TestAdapterInit
 # ---------------------------------------------------------------------------
+
 
 class TestAdapterInit:
     def test_source_system(self):
@@ -168,6 +175,7 @@ class TestAdapterInit:
 # ---------------------------------------------------------------------------
 # TestFromFunctionInvoking
 # ---------------------------------------------------------------------------
+
 
 class TestFromFunctionInvoking:
     def setup_method(self):
@@ -229,6 +237,7 @@ class TestFromFunctionInvoking:
 # TestFromFunctionInvoked
 # ---------------------------------------------------------------------------
 
+
 class TestFromFunctionInvoked:
     def setup_method(self):
         self.adapter = _make_adapter(run_id="trace-invoked")
@@ -276,6 +285,7 @@ class TestFromFunctionInvoked:
 # TestFromFunctionError
 # ---------------------------------------------------------------------------
 
+
 class TestFromFunctionError:
     def setup_method(self):
         self.adapter = _make_adapter(run_id="trace-err")
@@ -316,6 +326,7 @@ class TestFromFunctionError:
 # ---------------------------------------------------------------------------
 # TestFromPromptRendering
 # ---------------------------------------------------------------------------
+
 
 class TestFromPromptRendering:
     def setup_method(self):
@@ -361,6 +372,7 @@ class TestFromPromptRendering:
 # TestFromPromptRendered
 # ---------------------------------------------------------------------------
 
+
 class TestFromPromptRendered:
     def setup_method(self):
         self.adapter = _make_adapter()
@@ -394,12 +406,17 @@ class TestFromPromptRendered:
 # TestFromAutoFunctionInvoking
 # ---------------------------------------------------------------------------
 
+
 class TestFromAutoFunctionInvoking:
     def setup_method(self):
         self.adapter = _make_adapter(run_id="trace-auto")
 
     def _ev(self, **kwargs):
-        base = {"type": "auto_function_invoking", "plugin_name": "SearchPlugin", "function_name": "Search"}
+        base = {
+            "type": "auto_function_invoking",
+            "plugin_name": "SearchPlugin",
+            "function_name": "Search",
+        }
         base.update(kwargs)
         return self.adapter.to_sentinel_event(base)
 
@@ -450,6 +467,7 @@ class TestFromAutoFunctionInvoking:
 # TestFromAutoFunctionInvoked
 # ---------------------------------------------------------------------------
 
+
 class TestFromAutoFunctionInvoked:
     def setup_method(self):
         self.adapter = _make_adapter()
@@ -499,6 +517,7 @@ class TestFromAutoFunctionInvoked:
 # TestFromAutoFunctionError
 # ---------------------------------------------------------------------------
 
+
 class TestFromAutoFunctionError:
     def setup_method(self):
         self.adapter = _make_adapter()
@@ -534,6 +553,7 @@ class TestFromAutoFunctionError:
 # TestFromUnknown
 # ---------------------------------------------------------------------------
 
+
 class TestFromUnknown:
     def setup_method(self):
         self.adapter = _make_adapter()
@@ -567,44 +587,52 @@ class TestFromUnknown:
 # TestTimestampParsing
 # ---------------------------------------------------------------------------
 
+
 class TestTimestampParsing:
     def setup_method(self):
         self.adapter = _make_adapter()
 
     def test_parses_iso_timestamp(self):
-        ev = self.adapter.to_sentinel_event({
-            "type": "function_invoking",
-            "timestamp": "2026-04-01T10:00:00Z",
-        })
+        ev = self.adapter.to_sentinel_event(
+            {
+                "type": "function_invoking",
+                "timestamp": "2026-04-01T10:00:00Z",
+            }
+        )
         assert ev.timestamp.year == 2026
         assert ev.timestamp.month == 4
 
     def test_parses_timestamp_with_offset(self):
-        ev = self.adapter.to_sentinel_event({
-            "type": "function_invoking",
-            "timestamp": "2026-04-01T10:00:00+00:00",
-        })
+        ev = self.adapter.to_sentinel_event(
+            {
+                "type": "function_invoking",
+                "timestamp": "2026-04-01T10:00:00+00:00",
+            }
+        )
         assert ev.timestamp.year == 2026
 
     def test_falls_back_to_now_on_invalid_timestamp(self):
-        before = datetime.now(timezone.utc)
-        ev = self.adapter.to_sentinel_event({
-            "type": "function_invoking",
-            "timestamp": "not-a-date",
-        })
-        after = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
+        ev = self.adapter.to_sentinel_event(
+            {
+                "type": "function_invoking",
+                "timestamp": "not-a-date",
+            }
+        )
+        after = datetime.now(UTC)
         assert before <= ev.timestamp <= after
 
     def test_falls_back_to_now_when_no_timestamp(self):
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         ev = self.adapter.to_sentinel_event({"type": "function_invoking"})
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
         assert before <= ev.timestamp <= after
 
 
 # ---------------------------------------------------------------------------
 # TestDrainFlush
 # ---------------------------------------------------------------------------
+
 
 class TestDrainFlush:
     def setup_method(self):
@@ -661,6 +689,7 @@ class TestDrainFlush:
 # TestBufferThreadSafety
 # ---------------------------------------------------------------------------
 
+
 class TestBufferThreadSafety:
     def test_concurrent_buffer_events(self):
         adapter = _make_adapter()
@@ -685,7 +714,7 @@ class TestBufferThreadSafety:
 
     def test_drain_concurrent_with_buffer(self):
         adapter = _make_adapter()
-        drained: List[SentinelEvent] = []
+        drained: list[SentinelEvent] = []
         errors = []
 
         def producer():
@@ -718,6 +747,7 @@ class TestBufferThreadSafety:
 # ---------------------------------------------------------------------------
 # TestSetup
 # ---------------------------------------------------------------------------
+
 
 class TestSetup:
     """
@@ -759,7 +789,10 @@ class TestSetup:
             ctx = _make_function_invocation_context(plugin_name="P", function_name="F")
             ctx.result = MagicMock()
             ctx.result.metadata = {"model": "gpt-4o"}
-            async def next_fn(c): pass
+
+            async def next_fn(c):
+                pass
+
             await filters["function_invocation"](ctx, next_fn)
 
         asyncio.run(_run())
@@ -773,7 +806,10 @@ class TestSetup:
 
         async def _run():
             ctx = _make_function_invocation_context()
-            async def next_fn(c): raise ValueError("boom")
+
+            async def next_fn(c):
+                raise ValueError("boom")
+
             with pytest.raises(ValueError):
                 await filters["function_invocation"](ctx, next_fn)
 
@@ -789,7 +825,10 @@ class TestSetup:
 
         async def _run():
             ctx = _make_function_invocation_context()
-            async def next_fn(c): raise RuntimeError("service unavailable")
+
+            async def next_fn(c):
+                raise RuntimeError("service unavailable")
+
             with pytest.raises(RuntimeError):
                 await filters["function_invocation"](ctx, next_fn)
 
@@ -802,7 +841,10 @@ class TestSetup:
 
         async def _run():
             ctx = _make_prompt_render_context(rendered_prompt="Say hello.")
-            async def next_fn(c): pass
+
+            async def next_fn(c):
+                pass
+
             await filters["prompt_rendering"](ctx, next_fn)
 
         asyncio.run(_run())
@@ -815,7 +857,10 @@ class TestSetup:
 
         async def _run():
             ctx = _make_prompt_render_context(rendered_prompt="Be concise.")
-            async def next_fn(c): pass
+
+            async def next_fn(c):
+                pass
+
             await filters["prompt_rendering"](ctx, next_fn)
 
         asyncio.run(_run())
@@ -832,7 +877,10 @@ class TestSetup:
                 function_count=2,
                 function_result="result text",
             )
-            async def next_fn(c): pass
+
+            async def next_fn(c):
+                pass
+
             await filters["auto_function_invocation"](ctx, next_fn)
 
         asyncio.run(_run())
@@ -845,7 +893,10 @@ class TestSetup:
 
         async def _run():
             ctx = _make_auto_function_context()
-            async def next_fn(c): raise ConnectionError("unreachable")
+
+            async def next_fn(c):
+                raise ConnectionError("unreachable")
+
             with pytest.raises(ConnectionError):
                 await filters["auto_function_invocation"](ctx, next_fn)
 
@@ -858,7 +909,10 @@ class TestSetup:
 
         async def _run():
             ctx = _make_auto_function_context(terminate=True, function_result="done")
-            async def next_fn(c): pass
+
+            async def next_fn(c):
+                pass
+
             await filters["auto_function_invocation"](ctx, next_fn)
 
         asyncio.run(_run())
@@ -872,7 +926,10 @@ class TestSetup:
             result_mock = MagicMock()
             result_mock.metadata = {"tokens": "150"}
             ctx = _make_function_invocation_context(result=result_mock)
-            async def next_fn(c): pass
+
+            async def next_fn(c):
+                pass
+
             await filters["function_invocation"](ctx, next_fn)
 
         asyncio.run(_run())
@@ -885,7 +942,10 @@ class TestSetup:
         async def _run():
             ctx = _make_function_invocation_context()
             ctx.result = None
-            async def next_fn(c): pass
+
+            async def next_fn(c):
+                pass
+
             await filters["function_invocation"](ctx, next_fn)
 
         asyncio.run(_run())
@@ -897,10 +957,12 @@ class TestSetup:
 # TestExtractArguments
 # ---------------------------------------------------------------------------
 
+
 class TestExtractArguments:
     def setup_method(self):
         with patch("agentcop.adapters.semantic_kernel._require_semantic_kernel"):
             from agentcop.adapters.semantic_kernel import _extract_arguments
+
             self._extract = _extract_arguments
 
     def test_extracts_dict_arguments(self):
@@ -934,9 +996,11 @@ class TestExtractArguments:
 # TestProtocolConformance
 # ---------------------------------------------------------------------------
 
+
 class TestProtocolConformance:
     def test_conforms_to_sentinel_adapter_protocol(self):
         from agentcop.adapters import SentinelAdapter
+
         assert isinstance(_make_adapter(), SentinelAdapter)
 
     def test_has_source_system_attr(self):
@@ -953,6 +1017,7 @@ class TestProtocolConformance:
 # TestSentinelIntegration
 # ---------------------------------------------------------------------------
 
+
 class TestSentinelIntegration:
     def _make_sentinel_with(self, events, detectors=None):
         adapter = _make_adapter(run_id="integration")
@@ -964,6 +1029,7 @@ class TestSentinelIntegration:
 
     def test_ingests_all_events(self):
         from agentcop.violations import DEFAULT_DETECTORS
+
         s = self._make_sentinel_with(
             [
                 {"type": "function_invoking"},
@@ -986,6 +1052,7 @@ class TestSentinelIntegration:
                 trace_id=event.trace_id,
                 detail={"error": event.attributes.get("error")},
             )
+
         s = self._make_sentinel_with(
             [{"type": "function_error", "error": "auth failed"}],
             detectors=[detect_fn_error],
@@ -1005,6 +1072,7 @@ class TestSentinelIntegration:
                 trace_id=event.trace_id,
                 detail={"error": event.attributes.get("error")},
             )
+
         s = self._make_sentinel_with(
             [{"type": "auto_function_error", "plugin_name": "SearchPlugin", "error": "timeout"}],
             detectors=[detect_tool_error],
@@ -1015,6 +1083,7 @@ class TestSentinelIntegration:
 
     def test_detect_restricted_plugin(self):
         RESTRICTED = {"DangerPlugin", "ExecPlugin"}
+
         def detect_restricted(event: SentinelEvent):
             if event.event_type not in ("function_invoking", "auto_function_invoking"):
                 return None
@@ -1027,6 +1096,7 @@ class TestSentinelIntegration:
                 trace_id=event.trace_id,
                 detail={"plugin_name": event.attributes["plugin_name"]},
             )
+
         s = self._make_sentinel_with(
             [{"type": "function_invoking", "plugin_name": "DangerPlugin", "function_name": "Run"}],
             detectors=[detect_restricted],
@@ -1047,6 +1117,7 @@ class TestSentinelIntegration:
                 trace_id=event.trace_id,
                 detail={},
             )
+
         s = self._make_sentinel_with(
             [
                 {"type": "function_invoking"},
@@ -1069,6 +1140,7 @@ class TestSentinelIntegration:
                 trace_id=event.trace_id,
                 detail={},
             )
+
         s = self._make_sentinel_with(
             [
                 {"type": "function_error", "error": "fail1"},

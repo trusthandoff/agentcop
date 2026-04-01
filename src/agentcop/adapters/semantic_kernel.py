@@ -58,8 +58,8 @@ from __future__ import annotations
 
 import threading
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from agentcop.event import SentinelEvent
 
@@ -113,10 +113,10 @@ class SemanticKernelSentinelAdapter:
 
     source_system = "semantic_kernel"
 
-    def __init__(self, run_id: Optional[str] = None) -> None:
+    def __init__(self, run_id: str | None = None) -> None:
         _require_semantic_kernel()
         self._run_id = run_id
-        self._buffer: List[SentinelEvent] = []
+        self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
 
     def setup(self, kernel) -> None:
@@ -151,48 +151,54 @@ class SemanticKernelSentinelAdapter:
             is_streaming = bool(getattr(context, "is_streaming", False))
 
             adapter_self._buffer_event(
-                adapter_self.to_sentinel_event({
-                    "type": "function_invoking",
-                    "plugin_name": plugin_name,
-                    "function_name": function_name,
-                    "is_prompt": is_prompt,
-                    "is_streaming": is_streaming,
-                    "arguments": _extract_arguments(context),
-                })
+                adapter_self.to_sentinel_event(
+                    {
+                        "type": "function_invoking",
+                        "plugin_name": plugin_name,
+                        "function_name": function_name,
+                        "is_prompt": is_prompt,
+                        "is_streaming": is_streaming,
+                        "arguments": _extract_arguments(context),
+                    }
+                )
             )
 
             try:
                 await next(context)
             except Exception as exc:
                 adapter_self._buffer_event(
-                    adapter_self.to_sentinel_event({
-                        "type": "function_error",
-                        "plugin_name": plugin_name,
-                        "function_name": function_name,
-                        "is_prompt": is_prompt,
-                        "error": str(exc),
-                    })
+                    adapter_self.to_sentinel_event(
+                        {
+                            "type": "function_error",
+                            "plugin_name": plugin_name,
+                            "function_name": function_name,
+                            "is_prompt": is_prompt,
+                            "error": str(exc),
+                        }
+                    )
                 )
                 raise
 
             result = getattr(context, "result", None)
             result_str = str(result)[:500] if result is not None else ""
-            metadata: Dict[str, str] = {}
+            metadata: dict[str, str] = {}
             if result is not None:
                 meta = getattr(result, "metadata", None)
                 if isinstance(meta, dict):
                     metadata = {k: str(v) for k, v in meta.items()}
 
             adapter_self._buffer_event(
-                adapter_self.to_sentinel_event({
-                    "type": "function_invoked",
-                    "plugin_name": plugin_name,
-                    "function_name": function_name,
-                    "is_prompt": is_prompt,
-                    "is_streaming": is_streaming,
-                    "result": result_str,
-                    "metadata": metadata,
-                })
+                adapter_self.to_sentinel_event(
+                    {
+                        "type": "function_invoked",
+                        "plugin_name": plugin_name,
+                        "function_name": function_name,
+                        "is_prompt": is_prompt,
+                        "is_streaming": is_streaming,
+                        "result": result_str,
+                        "metadata": metadata,
+                    }
+                )
             )
 
         async def _prompt_rendering_filter(context, next) -> None:
@@ -201,24 +207,28 @@ class SemanticKernelSentinelAdapter:
             is_streaming = bool(getattr(context, "is_streaming", False))
 
             adapter_self._buffer_event(
-                adapter_self.to_sentinel_event({
-                    "type": "prompt_rendering",
-                    "plugin_name": plugin_name,
-                    "function_name": function_name,
-                    "is_streaming": is_streaming,
-                })
+                adapter_self.to_sentinel_event(
+                    {
+                        "type": "prompt_rendering",
+                        "plugin_name": plugin_name,
+                        "function_name": function_name,
+                        "is_streaming": is_streaming,
+                    }
+                )
             )
 
             await next(context)
 
             rendered_prompt = str(getattr(context, "rendered_prompt", None) or "")
             adapter_self._buffer_event(
-                adapter_self.to_sentinel_event({
-                    "type": "prompt_rendered",
-                    "plugin_name": plugin_name,
-                    "function_name": function_name,
-                    "rendered_prompt": rendered_prompt[:500],
-                })
+                adapter_self.to_sentinel_event(
+                    {
+                        "type": "prompt_rendered",
+                        "plugin_name": plugin_name,
+                        "function_name": function_name,
+                        "rendered_prompt": rendered_prompt[:500],
+                    }
+                )
             )
 
         async def _auto_function_invocation_filter(context, next) -> None:
@@ -230,27 +240,31 @@ class SemanticKernelSentinelAdapter:
             is_streaming = bool(getattr(context, "is_streaming", False))
 
             adapter_self._buffer_event(
-                adapter_self.to_sentinel_event({
-                    "type": "auto_function_invoking",
-                    "plugin_name": plugin_name,
-                    "function_name": function_name,
-                    "request_sequence_index": request_seq,
-                    "function_sequence_index": function_seq,
-                    "function_count": function_count,
-                    "is_streaming": is_streaming,
-                })
+                adapter_self.to_sentinel_event(
+                    {
+                        "type": "auto_function_invoking",
+                        "plugin_name": plugin_name,
+                        "function_name": function_name,
+                        "request_sequence_index": request_seq,
+                        "function_sequence_index": function_seq,
+                        "function_count": function_count,
+                        "is_streaming": is_streaming,
+                    }
+                )
             )
 
             try:
                 await next(context)
             except Exception as exc:
                 adapter_self._buffer_event(
-                    adapter_self.to_sentinel_event({
-                        "type": "auto_function_error",
-                        "plugin_name": plugin_name,
-                        "function_name": function_name,
-                        "error": str(exc),
-                    })
+                    adapter_self.to_sentinel_event(
+                        {
+                            "type": "auto_function_error",
+                            "plugin_name": plugin_name,
+                            "function_name": function_name,
+                            "error": str(exc),
+                        }
+                    )
                 )
                 raise
 
@@ -259,22 +273,24 @@ class SemanticKernelSentinelAdapter:
             terminate = bool(getattr(context, "terminate", False))
 
             adapter_self._buffer_event(
-                adapter_self.to_sentinel_event({
-                    "type": "auto_function_invoked",
-                    "plugin_name": plugin_name,
-                    "function_name": function_name,
-                    "request_sequence_index": request_seq,
-                    "function_sequence_index": function_seq,
-                    "terminate": terminate,
-                    "result": result_str,
-                })
+                adapter_self.to_sentinel_event(
+                    {
+                        "type": "auto_function_invoked",
+                        "plugin_name": plugin_name,
+                        "function_name": function_name,
+                        "request_sequence_index": request_seq,
+                        "function_sequence_index": function_seq,
+                        "terminate": terminate,
+                        "result": result_str,
+                    }
+                )
             )
 
         kernel.add_filter(FilterTypes.FUNCTION_INVOCATION, _function_invocation_filter)
         kernel.add_filter(FilterTypes.PROMPT_RENDERING, _prompt_rendering_filter)
         kernel.add_filter(FilterTypes.AUTO_FUNCTION_INVOCATION, _auto_function_invocation_filter)
 
-    def to_sentinel_event(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def to_sentinel_event(self, raw: dict[str, Any]) -> SentinelEvent:
         """
         Translate one Semantic Kernel event dict into a SentinelEvent.
 
@@ -283,19 +299,19 @@ class SemanticKernelSentinelAdapter:
         with severity INFO.
         """
         dispatch = {
-            "function_invoking":      self._from_function_invoking,
-            "function_invoked":       self._from_function_invoked,
-            "function_error":         self._from_function_error,
-            "prompt_rendering":       self._from_prompt_rendering,
-            "prompt_rendered":        self._from_prompt_rendered,
+            "function_invoking": self._from_function_invoking,
+            "function_invoked": self._from_function_invoked,
+            "function_error": self._from_function_error,
+            "prompt_rendering": self._from_prompt_rendering,
+            "prompt_rendered": self._from_prompt_rendered,
             "auto_function_invoking": self._from_auto_function_invoking,
-            "auto_function_invoked":  self._from_auto_function_invoked,
-            "auto_function_error":    self._from_auto_function_error,
+            "auto_function_invoked": self._from_auto_function_invoked,
+            "auto_function_error": self._from_auto_function_error,
         }
         handler = dispatch.get(raw.get("type", ""), self._from_unknown)
         return handler(raw)
 
-    def drain(self) -> List[SentinelEvent]:
+    def drain(self) -> list[SentinelEvent]:
         """Return all buffered SentinelEvents and clear the buffer."""
         with self._lock:
             events = list(self._buffer)
@@ -318,20 +334,20 @@ class SemanticKernelSentinelAdapter:
     # Timestamp helper
     # ------------------------------------------------------------------
 
-    def _parse_timestamp(self, raw: Dict[str, Any]) -> datetime:
+    def _parse_timestamp(self, raw: dict[str, Any]) -> datetime:
         ts = raw.get("timestamp")
         if ts:
             try:
                 return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
             except ValueError:
                 pass
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     # ------------------------------------------------------------------
     # Private translators — function invocation
     # ------------------------------------------------------------------
 
-    def _from_function_invoking(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_function_invoking(self, raw: dict[str, Any]) -> SentinelEvent:
         plugin_name = raw.get("plugin_name", "unknown")
         function_name = raw.get("function_name", "unknown")
         is_prompt = bool(raw.get("is_prompt", False))
@@ -354,7 +370,7 @@ class SemanticKernelSentinelAdapter:
             },
         )
 
-    def _from_function_invoked(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_function_invoked(self, raw: dict[str, Any]) -> SentinelEvent:
         plugin_name = raw.get("plugin_name", "unknown")
         function_name = raw.get("function_name", "unknown")
         is_prompt = bool(raw.get("is_prompt", False))
@@ -379,7 +395,7 @@ class SemanticKernelSentinelAdapter:
             },
         )
 
-    def _from_function_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_function_error(self, raw: dict[str, Any]) -> SentinelEvent:
         plugin_name = raw.get("plugin_name", "unknown")
         function_name = raw.get("function_name", "unknown")
         is_prompt = bool(raw.get("is_prompt", False))
@@ -404,7 +420,7 @@ class SemanticKernelSentinelAdapter:
     # Private translators — prompt rendering
     # ------------------------------------------------------------------
 
-    def _from_prompt_rendering(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_prompt_rendering(self, raw: dict[str, Any]) -> SentinelEvent:
         plugin_name = raw.get("plugin_name", "unknown")
         function_name = raw.get("function_name", "unknown")
         is_streaming = bool(raw.get("is_streaming", False))
@@ -423,7 +439,7 @@ class SemanticKernelSentinelAdapter:
             },
         )
 
-    def _from_prompt_rendered(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_prompt_rendered(self, raw: dict[str, Any]) -> SentinelEvent:
         plugin_name = raw.get("plugin_name", "unknown")
         function_name = raw.get("function_name", "unknown")
         rendered_prompt = raw.get("rendered_prompt", "")
@@ -446,7 +462,7 @@ class SemanticKernelSentinelAdapter:
     # Private translators — auto-function invocation (LLM tool calls)
     # ------------------------------------------------------------------
 
-    def _from_auto_function_invoking(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_auto_function_invoking(self, raw: dict[str, Any]) -> SentinelEvent:
         plugin_name = raw.get("plugin_name", "unknown")
         function_name = raw.get("function_name", "unknown")
         request_seq = int(raw.get("request_sequence_index", 0))
@@ -474,7 +490,7 @@ class SemanticKernelSentinelAdapter:
             },
         )
 
-    def _from_auto_function_invoked(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_auto_function_invoked(self, raw: dict[str, Any]) -> SentinelEvent:
         plugin_name = raw.get("plugin_name", "unknown")
         function_name = raw.get("function_name", "unknown")
         request_seq = int(raw.get("request_sequence_index", 0))
@@ -499,7 +515,7 @@ class SemanticKernelSentinelAdapter:
             },
         )
 
-    def _from_auto_function_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_auto_function_error(self, raw: dict[str, Any]) -> SentinelEvent:
         plugin_name = raw.get("plugin_name", "unknown")
         function_name = raw.get("function_name", "unknown")
         error = raw.get("error", "")
@@ -522,7 +538,7 @@ class SemanticKernelSentinelAdapter:
     # Private translator — unknown
     # ------------------------------------------------------------------
 
-    def _from_unknown(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_unknown(self, raw: dict[str, Any]) -> SentinelEvent:
         original_type = raw.get("type", "unknown")
         return SentinelEvent(
             event_id=f"sk-unknown-{uuid.uuid4()}",
@@ -540,7 +556,8 @@ class SemanticKernelSentinelAdapter:
 # Module-level helpers
 # ---------------------------------------------------------------------------
 
-def _extract_arguments(context) -> Dict[str, str]:
+
+def _extract_arguments(context) -> dict[str, str]:
     """
     Safely extract ``KernelArguments`` from a filter context as a plain dict.
 

@@ -1,6 +1,6 @@
 """Tests for SentinelEvent and ViolationRecord."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -9,14 +9,14 @@ from agentcop import SentinelEvent, ViolationRecord
 
 
 def make_event(**kwargs):
-    defaults = dict(
-        event_id="evt-001",
-        event_type="test_event",
-        timestamp="2026-01-01T00:00:00Z",
-        severity="INFO",
-        body="test body",
-        source_system="test-system",
-    )
+    defaults = {
+        "event_id": "evt-001",
+        "event_type": "test_event",
+        "timestamp": "2026-01-01T00:00:00Z",
+        "severity": "INFO",
+        "body": "test body",
+        "source_system": "test-system",
+    }
     defaults.update(kwargs)
     return SentinelEvent(**defaults)
 
@@ -59,7 +59,7 @@ class TestSentinelEvent:
         assert isinstance(e.timestamp, datetime)
 
     def test_timestamp_accepts_datetime_object(self):
-        dt = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        dt = datetime(2026, 1, 1, tzinfo=UTC)
         e = make_event(timestamp=dt)
         assert e.timestamp == dt
 
@@ -113,7 +113,11 @@ class TestSentinelEvent:
 
 class TestViolationRecord:
     def _make(self, **kwargs):
-        defaults = dict(violation_type="test_violation", severity="ERROR", source_event_id="evt-001")
+        defaults = {
+            "violation_type": "test_violation",
+            "severity": "ERROR",
+            "source_event_id": "evt-001",
+        }
         defaults.update(kwargs)
         return ViolationRecord(**defaults)
 

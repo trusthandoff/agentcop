@@ -1,10 +1,10 @@
 import threading
-from typing import Callable, Iterable, List, Optional
+from collections.abc import Callable, Iterable
 
 from .event import SentinelEvent, ViolationRecord
 from .violations import DEFAULT_DETECTORS
 
-ViolationDetector = Callable[[SentinelEvent], Optional[ViolationRecord]]
+ViolationDetector = Callable[[SentinelEvent], ViolationRecord | None]
 
 
 class Sentinel:
@@ -35,10 +35,10 @@ class Sentinel:
         sentinel.register_detector(my_detector)
     """
 
-    def __init__(self, detectors: Optional[List[ViolationDetector]] = None):
+    def __init__(self, detectors: list[ViolationDetector] | None = None):
         self._lock = threading.Lock()
-        self._events: List[SentinelEvent] = []
-        self._detectors: List[ViolationDetector] = (
+        self._events: list[SentinelEvent] = []
+        self._detectors: list[ViolationDetector] = (
             list(detectors) if detectors is not None else list(DEFAULT_DETECTORS)
         )
 
@@ -53,12 +53,12 @@ class Sentinel:
         with self._lock:
             self._events = ingested
 
-    def detect_violations(self) -> List[ViolationRecord]:
+    def detect_violations(self) -> list[ViolationRecord]:
         with self._lock:
             events = list(self._events)
             detectors = list(self._detectors)
 
-        violations: List[ViolationRecord] = []
+        violations: list[ViolationRecord] = []
         for event in events:
             for detector in detectors:
                 result = detector(event)

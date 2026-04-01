@@ -67,8 +67,8 @@ from __future__ import annotations
 import json
 import threading
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from agentcop.event import SentinelEvent
 
@@ -78,8 +78,7 @@ def _require_langfuse() -> None:
         import langfuse  # noqa: F401
     except ImportError as exc:
         raise ImportError(
-            "Langfuse adapter requires 'langfuse'. "
-            "Install it with: pip install agentcop[langfuse]"
+            "Langfuse adapter requires 'langfuse'. Install it with: pip install agentcop[langfuse]"
         ) from exc
 
 
@@ -135,10 +134,10 @@ class LangfuseSentinelAdapter:
 
     source_system = "langfuse"
 
-    def __init__(self, run_id: Optional[str] = None) -> None:
+    def __init__(self, run_id: str | None = None) -> None:
         _require_langfuse()
         self._run_id = run_id
-        self._buffer: List[SentinelEvent] = []
+        self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
 
     def setup(self, langfuse_client=None) -> None:
@@ -162,6 +161,7 @@ class LangfuseSentinelAdapter:
             client = langfuse_client
         else:
             from langfuse import get_client  # type: ignore[import]
+
             client = get_client()
 
         from opentelemetry.sdk.trace import SpanProcessor  # type: ignore[import]
@@ -192,16 +192,14 @@ class LangfuseSentinelAdapter:
                 pass
 
         # Langfuse 4.x stores the TracerProvider on client._resources.tracer_provider
-        tracer_provider = getattr(
-            getattr(client, "_resources", None), "tracer_provider", None
-        )
+        tracer_provider = getattr(getattr(client, "_resources", None), "tracer_provider", None)
         if tracer_provider is None:
             # Fallback for alternate client structures
             tracer_provider = getattr(client, "tracer_provider", None)
         if tracer_provider is not None:
             tracer_provider.add_span_processor(_LangfuseObserver())
 
-    def to_sentinel_event(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def to_sentinel_event(self, raw: dict[str, Any]) -> SentinelEvent:
         """
         Translate one Langfuse event dict into a SentinelEvent.
 
@@ -211,22 +209,22 @@ class LangfuseSentinelAdapter:
         """
         dispatch = {
             "observation_started": self._from_observation_started,
-            "span_finished":       self._from_span_finished,
-            "span_error":          self._from_span_error,
+            "span_finished": self._from_span_finished,
+            "span_error": self._from_span_error,
             "generation_finished": self._from_generation_finished,
-            "generation_error":    self._from_generation_error,
-            "tool_finished":       self._from_tool_finished,
-            "tool_error":          self._from_tool_error,
-            "retriever_finished":  self._from_retriever_finished,
-            "retriever_error":     self._from_retriever_error,
-            "event_occurred":      self._from_event_occurred,
-            "guardrail_finished":  self._from_guardrail_finished,
-            "guardrail_error":     self._from_guardrail_error,
+            "generation_error": self._from_generation_error,
+            "tool_finished": self._from_tool_finished,
+            "tool_error": self._from_tool_error,
+            "retriever_finished": self._from_retriever_finished,
+            "retriever_error": self._from_retriever_error,
+            "event_occurred": self._from_event_occurred,
+            "guardrail_finished": self._from_guardrail_finished,
+            "guardrail_error": self._from_guardrail_error,
         }
         handler = dispatch.get(raw.get("type", ""), self._from_unknown)
         return handler(raw)
 
-    def drain(self) -> List[SentinelEvent]:
+    def drain(self) -> list[SentinelEvent]:
         """Return all buffered SentinelEvents and clear the buffer."""
         with self._lock:
             events = list(self._buffer)
@@ -249,20 +247,20 @@ class LangfuseSentinelAdapter:
     # Timestamp helper
     # ------------------------------------------------------------------
 
-    def _parse_timestamp(self, raw: Dict[str, Any]) -> datetime:
+    def _parse_timestamp(self, raw: dict[str, Any]) -> datetime:
         ts = raw.get("timestamp")
         if ts:
             try:
                 return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
             except ValueError:
                 pass
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     # ------------------------------------------------------------------
     # Trace-ID helper: prefer run_id; fall back to Langfuse trace ID
     # ------------------------------------------------------------------
 
-    def _trace_id(self, raw: Dict[str, Any]) -> Optional[str]:
+    def _trace_id(self, raw: dict[str, Any]) -> str | None:
         if self._run_id:
             return self._run_id
         lf = raw.get("langfuse_trace_id", "")
@@ -272,7 +270,7 @@ class LangfuseSentinelAdapter:
     # Private translators — observation_started
     # ------------------------------------------------------------------
 
-    def _from_observation_started(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_observation_started(self, raw: dict[str, Any]) -> SentinelEvent:
         obs_type = raw.get("observation_type", "unknown")
         obs_name = raw.get("observation_name", "unknown")
         return SentinelEvent(
@@ -298,7 +296,7 @@ class LangfuseSentinelAdapter:
     # Private translators — span (span / agent / chain / evaluator)
     # ------------------------------------------------------------------
 
-    def _from_span_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_span_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         obs_type = raw.get("observation_type", "span")
         obs_name = raw.get("observation_name", "unknown")
         return SentinelEvent(
@@ -312,7 +310,7 @@ class LangfuseSentinelAdapter:
             attributes=self._common_attrs(raw),
         )
 
-    def _from_span_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_span_error(self, raw: dict[str, Any]) -> SentinelEvent:
         obs_type = raw.get("observation_type", "span")
         obs_name = raw.get("observation_name", "unknown")
         status_message = raw.get("status_message", "")
@@ -331,7 +329,7 @@ class LangfuseSentinelAdapter:
     # Private translators — generation (generation / embedding)
     # ------------------------------------------------------------------
 
-    def _from_generation_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_generation_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         obs_type = raw.get("observation_type", "generation")
         obs_name = raw.get("observation_name", "unknown")
         model = raw.get("model", "unknown")
@@ -346,7 +344,7 @@ class LangfuseSentinelAdapter:
             attributes={**self._common_attrs(raw), **self._generation_attrs(raw)},
         )
 
-    def _from_generation_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_generation_error(self, raw: dict[str, Any]) -> SentinelEvent:
         obs_type = raw.get("observation_type", "generation")
         obs_name = raw.get("observation_name", "unknown")
         model = raw.get("model", "unknown")
@@ -366,7 +364,7 @@ class LangfuseSentinelAdapter:
     # Private translators — tool
     # ------------------------------------------------------------------
 
-    def _from_tool_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_tool_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         obs_name = raw.get("observation_name", "unknown")
         return SentinelEvent(
             event_id=f"langfuse-tool-{uuid.uuid4()}",
@@ -379,7 +377,7 @@ class LangfuseSentinelAdapter:
             attributes=self._common_attrs(raw),
         )
 
-    def _from_tool_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_tool_error(self, raw: dict[str, Any]) -> SentinelEvent:
         obs_name = raw.get("observation_name", "unknown")
         status_message = raw.get("status_message", "")
         return SentinelEvent(
@@ -397,7 +395,7 @@ class LangfuseSentinelAdapter:
     # Private translators — retriever
     # ------------------------------------------------------------------
 
-    def _from_retriever_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_retriever_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         obs_name = raw.get("observation_name", "unknown")
         return SentinelEvent(
             event_id=f"langfuse-retriever-{uuid.uuid4()}",
@@ -410,7 +408,7 @@ class LangfuseSentinelAdapter:
             attributes=self._common_attrs(raw),
         )
 
-    def _from_retriever_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_retriever_error(self, raw: dict[str, Any]) -> SentinelEvent:
         obs_name = raw.get("observation_name", "unknown")
         status_message = raw.get("status_message", "")
         return SentinelEvent(
@@ -428,7 +426,7 @@ class LangfuseSentinelAdapter:
     # Private translator — event_occurred
     # ------------------------------------------------------------------
 
-    def _from_event_occurred(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_event_occurred(self, raw: dict[str, Any]) -> SentinelEvent:
         obs_name = raw.get("observation_name", "unknown")
         return SentinelEvent(
             event_id=f"langfuse-event-{uuid.uuid4()}",
@@ -445,7 +443,7 @@ class LangfuseSentinelAdapter:
     # Private translators — guardrail
     # ------------------------------------------------------------------
 
-    def _from_guardrail_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_guardrail_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         obs_name = raw.get("observation_name", "unknown")
         return SentinelEvent(
             event_id=f"langfuse-guardrail-{uuid.uuid4()}",
@@ -458,7 +456,7 @@ class LangfuseSentinelAdapter:
             attributes=self._common_attrs(raw),
         )
 
-    def _from_guardrail_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_guardrail_error(self, raw: dict[str, Any]) -> SentinelEvent:
         obs_name = raw.get("observation_name", "unknown")
         status_message = raw.get("status_message", "")
         return SentinelEvent(
@@ -476,7 +474,7 @@ class LangfuseSentinelAdapter:
     # Private translator — unknown
     # ------------------------------------------------------------------
 
-    def _from_unknown(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_unknown(self, raw: dict[str, Any]) -> SentinelEvent:
         original_type = raw.get("type", "unknown")
         return SentinelEvent(
             event_id=f"langfuse-unknown-{uuid.uuid4()}",
@@ -493,7 +491,7 @@ class LangfuseSentinelAdapter:
     # Attribute helpers
     # ------------------------------------------------------------------
 
-    def _common_attrs(self, raw: Dict[str, Any]) -> Dict[str, Any]:
+    def _common_attrs(self, raw: dict[str, Any]) -> dict[str, Any]:
         return {
             "observation_type": raw.get("observation_type", "unknown"),
             "observation_name": raw.get("observation_name", "unknown"),
@@ -508,7 +506,7 @@ class LangfuseSentinelAdapter:
             "session_id": raw.get("session_id", ""),
         }
 
-    def _generation_attrs(self, raw: Dict[str, Any]) -> Dict[str, Any]:
+    def _generation_attrs(self, raw: dict[str, Any]) -> dict[str, Any]:
         return {
             "model": raw.get("model", "unknown"),
             "usage": raw.get("usage") or {},
@@ -522,6 +520,7 @@ class LangfuseSentinelAdapter:
 # Module-level helpers — OTel span → normalized dict
 # ---------------------------------------------------------------------------
 
+
 def _safe_json_load(s: Any) -> Any:
     """Parse a JSON string into a Python object; return the raw value on failure."""
     if not isinstance(s, str):
@@ -532,12 +531,12 @@ def _safe_json_load(s: Any) -> Any:
         return s
 
 
-def _ns_to_iso(ns: Optional[int]) -> Optional[str]:
+def _ns_to_iso(ns: int | None) -> str | None:
     """Convert nanoseconds-since-epoch to an ISO 8601 string, or None."""
     if not ns:
         return None
     try:
-        return datetime.fromtimestamp(ns / 1e9, tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(ns / 1e9, tz=UTC).isoformat()
     except (OSError, OverflowError, ValueError):
         return None
 
@@ -578,7 +577,7 @@ def _extract_ids(span) -> tuple[str, str, str]:
     return lf_trace_id, obs_id, parent_obs_id
 
 
-def _span_to_raw_start(span) -> Optional[Dict[str, Any]]:
+def _span_to_raw_start(span) -> dict[str, Any] | None:
     """
     Convert an OTel span (received in ``SpanProcessor.on_start``) to a
     normalized ``observation_started`` dict, or ``None`` if the span has no
@@ -609,7 +608,7 @@ def _span_to_raw_start(span) -> Optional[Dict[str, Any]]:
     }
 
 
-def _span_to_raw_end(span) -> Optional[Dict[str, Any]]:
+def _span_to_raw_end(span) -> dict[str, Any] | None:
     """
     Convert a completed OTel ``ReadableSpan`` (received in
     ``SpanProcessor.on_end``) to a normalized event dict.
@@ -626,7 +625,7 @@ def _span_to_raw_end(span) -> Optional[Dict[str, Any]]:
     end_ns = getattr(span, "_end_time", None) or getattr(span, "end_time", None)
     is_err = _is_error(span)
 
-    base: Dict[str, Any] = {
+    base: dict[str, Any] = {
         "observation_type": obs_type,
         "observation_name": getattr(span, "name", None) or "unknown",
         "langfuse_trace_id": lf_trace_id,

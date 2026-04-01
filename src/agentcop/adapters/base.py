@@ -5,7 +5,7 @@ Implement this to bridge any system's raw event dicts into SentinelEvents.
 The TrustHandoff adapter lives in trusthandoff.sentinel_adapter.
 """
 
-from typing import Any, Dict, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from agentcop.event import SentinelEvent
 
@@ -33,5 +33,4 @@ class SentinelAdapter(Protocol):
 
     source_system: str
 
-    def to_sentinel_event(self, raw: Dict[str, Any]) -> SentinelEvent:
-        ...
+    def to_sentinel_event(self, raw: dict[str, Any]) -> SentinelEvent: ...

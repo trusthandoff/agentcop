@@ -51,8 +51,8 @@ from __future__ import annotations
 
 import threading
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from agentcop.event import SentinelEvent
 
@@ -110,10 +110,10 @@ class LlamaIndexSentinelAdapter:
 
     source_system = "llamaindex"
 
-    def __init__(self, run_id: Optional[str] = None) -> None:
+    def __init__(self, run_id: str | None = None) -> None:
         _require_llamaindex()
         self._run_id = run_id
-        self._buffer: List[SentinelEvent] = []
+        self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
 
     def setup(self, dispatcher=None) -> None:
@@ -135,20 +135,6 @@ class LlamaIndexSentinelAdapter:
         from llama_index.core.instrumentation.event_handlers import (  # type: ignore[import]
             BaseEventHandler as _BaseEventHandler,
         )
-        from llama_index.core.instrumentation.events.query import (  # type: ignore[import]
-            QueryEndEvent,
-            QueryStartEvent,
-        )
-        from llama_index.core.instrumentation.events.retrieval import (  # type: ignore[import]
-            RetrievalEndEvent,
-            RetrievalStartEvent,
-        )
-        from llama_index.core.instrumentation.events.llm import (  # type: ignore[import]
-            LLMChatEndEvent,
-            LLMChatStartEvent,
-            LLMPredictEndEvent,
-            LLMPredictStartEvent,
-        )
         from llama_index.core.instrumentation.events.agent import (  # type: ignore[import]
             AgentRunStepEndEvent,
             AgentRunStepStartEvent,
@@ -157,6 +143,20 @@ class LlamaIndexSentinelAdapter:
         from llama_index.core.instrumentation.events.embedding import (  # type: ignore[import]
             EmbeddingEndEvent,
             EmbeddingStartEvent,
+        )
+        from llama_index.core.instrumentation.events.llm import (  # type: ignore[import]
+            LLMChatEndEvent,
+            LLMChatStartEvent,
+            LLMPredictEndEvent,
+            LLMPredictStartEvent,
+        )
+        from llama_index.core.instrumentation.events.query import (  # type: ignore[import]
+            QueryEndEvent,
+            QueryStartEvent,
+        )
+        from llama_index.core.instrumentation.events.retrieval import (  # type: ignore[import]
+            RetrievalEndEvent,
+            RetrievalStartEvent,
         )
 
         adapter_self = self
@@ -168,7 +168,7 @@ class LlamaIndexSentinelAdapter:
 
             def handle(self, event, **kwargs) -> None:
                 ts = str(getattr(event, "timestamp", None) or "")
-                raw: Optional[Dict[str, Any]] = None
+                raw: dict[str, Any] | None = None
 
                 if isinstance(event, QueryStartEvent):
                     raw = {
@@ -238,7 +238,6 @@ class LlamaIndexSentinelAdapter:
                         "timestamp": ts,
                     }
                 elif isinstance(event, EmbeddingStartEvent):
-                    chunks = getattr(event, "model_dict", None) or {}
                     raw = {
                         "type": "embedding_started",
                         "model_name": _extract_model_name(event),
@@ -259,7 +258,7 @@ class LlamaIndexSentinelAdapter:
         d = dispatcher if dispatcher is not None else _get_dispatcher()
         d.add_event_handler(_Handler())
 
-    def to_sentinel_event(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def to_sentinel_event(self, raw: dict[str, Any]) -> SentinelEvent:
         """
         Translate one LlamaIndex event dict into a SentinelEvent.
 
@@ -268,25 +267,25 @@ class LlamaIndexSentinelAdapter:
         ``unknown_llamaindex_event`` with severity INFO.
         """
         dispatch = {
-            "query_started":       self._from_query_started,
-            "query_finished":      self._from_query_finished,
-            "query_error":         self._from_query_error,
-            "retrieval_started":   self._from_retrieval_started,
-            "retrieval_finished":  self._from_retrieval_finished,
-            "retrieval_error":     self._from_retrieval_error,
+            "query_started": self._from_query_started,
+            "query_finished": self._from_query_finished,
+            "query_error": self._from_query_error,
+            "retrieval_started": self._from_retrieval_started,
+            "retrieval_finished": self._from_retrieval_finished,
+            "retrieval_error": self._from_retrieval_error,
             "llm_predict_started": self._from_llm_predict_started,
             "llm_predict_finished": self._from_llm_predict_finished,
-            "llm_predict_error":   self._from_llm_predict_error,
-            "agent_step_started":  self._from_agent_step_started,
+            "llm_predict_error": self._from_llm_predict_error,
+            "agent_step_started": self._from_agent_step_started,
             "agent_step_finished": self._from_agent_step_finished,
-            "agent_tool_call":     self._from_agent_tool_call,
-            "embedding_started":   self._from_embedding_started,
-            "embedding_finished":  self._from_embedding_finished,
+            "agent_tool_call": self._from_agent_tool_call,
+            "embedding_started": self._from_embedding_started,
+            "embedding_finished": self._from_embedding_finished,
         }
         handler = dispatch.get(raw.get("type", ""), self._from_unknown)
         return handler(raw)
 
-    def drain(self) -> List[SentinelEvent]:
+    def drain(self) -> list[SentinelEvent]:
         """Return all buffered SentinelEvents and clear the buffer."""
         with self._lock:
             events = list(self._buffer)
@@ -309,20 +308,20 @@ class LlamaIndexSentinelAdapter:
     # Timestamp helper
     # ------------------------------------------------------------------
 
-    def _parse_timestamp(self, raw: Dict[str, Any]) -> datetime:
+    def _parse_timestamp(self, raw: dict[str, Any]) -> datetime:
         ts = raw.get("timestamp")
         if ts:
             try:
                 return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
             except ValueError:
                 pass
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     # ------------------------------------------------------------------
     # Private translators — query
     # ------------------------------------------------------------------
 
-    def _from_query_started(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_query_started(self, raw: dict[str, Any]) -> SentinelEvent:
         query_str = raw.get("query_str", "")
         return SentinelEvent(
             event_id=f"llamaindex-query-{uuid.uuid4()}",
@@ -335,7 +334,7 @@ class LlamaIndexSentinelAdapter:
             attributes={"query_str": query_str},
         )
 
-    def _from_query_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_query_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         query_str = raw.get("query_str", "")
         response = raw.get("response", "")
         return SentinelEvent(
@@ -349,7 +348,7 @@ class LlamaIndexSentinelAdapter:
             attributes={"query_str": query_str, "response": response},
         )
 
-    def _from_query_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_query_error(self, raw: dict[str, Any]) -> SentinelEvent:
         query_str = raw.get("query_str", "")
         error = raw.get("error", "")
         return SentinelEvent(
@@ -367,7 +366,7 @@ class LlamaIndexSentinelAdapter:
     # Private translators — retrieval
     # ------------------------------------------------------------------
 
-    def _from_retrieval_started(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_retrieval_started(self, raw: dict[str, Any]) -> SentinelEvent:
         query_str = raw.get("query_str", "")
         return SentinelEvent(
             event_id=f"llamaindex-retrieval-{uuid.uuid4()}",
@@ -380,7 +379,7 @@ class LlamaIndexSentinelAdapter:
             attributes={"query_str": query_str},
         )
 
-    def _from_retrieval_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_retrieval_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         query_str = raw.get("query_str", "")
         num_nodes = raw.get("num_nodes", 0)
         return SentinelEvent(
@@ -394,7 +393,7 @@ class LlamaIndexSentinelAdapter:
             attributes={"query_str": query_str, "num_nodes": num_nodes},
         )
 
-    def _from_retrieval_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_retrieval_error(self, raw: dict[str, Any]) -> SentinelEvent:
         query_str = raw.get("query_str", "")
         error = raw.get("error", "")
         return SentinelEvent(
@@ -412,10 +411,10 @@ class LlamaIndexSentinelAdapter:
     # Private translators — LLM
     # ------------------------------------------------------------------
 
-    def _from_llm_predict_started(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_llm_predict_started(self, raw: dict[str, Any]) -> SentinelEvent:
         model_name = raw.get("model_name", "unknown")
         query_str = raw.get("query_str", "")
-        attrs: Dict[str, Any] = {"model_name": model_name}
+        attrs: dict[str, Any] = {"model_name": model_name}
         if query_str:
             attrs["query_str"] = query_str
         return SentinelEvent(
@@ -429,7 +428,7 @@ class LlamaIndexSentinelAdapter:
             attributes=attrs,
         )
 
-    def _from_llm_predict_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_llm_predict_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         model_name = raw.get("model_name", "unknown")
         response = raw.get("response", "")
         return SentinelEvent(
@@ -443,7 +442,7 @@ class LlamaIndexSentinelAdapter:
             attributes={"model_name": model_name, "response": response},
         )
 
-    def _from_llm_predict_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_llm_predict_error(self, raw: dict[str, Any]) -> SentinelEvent:
         model_name = raw.get("model_name", "unknown")
         error = raw.get("error", "")
         return SentinelEvent(
@@ -461,7 +460,7 @@ class LlamaIndexSentinelAdapter:
     # Private translators — agent
     # ------------------------------------------------------------------
 
-    def _from_agent_step_started(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_agent_step_started(self, raw: dict[str, Any]) -> SentinelEvent:
         task_id = raw.get("task_id", "")
         step_num = raw.get("step_num", 0)
         input_str = raw.get("input", "")
@@ -476,7 +475,7 @@ class LlamaIndexSentinelAdapter:
             attributes={"task_id": task_id, "step_num": step_num, "input": input_str},
         )
 
-    def _from_agent_step_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_agent_step_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         task_id = raw.get("task_id", "")
         step_num = raw.get("step_num", 0)
         output = raw.get("output", "")
@@ -497,7 +496,7 @@ class LlamaIndexSentinelAdapter:
             },
         )
 
-    def _from_agent_tool_call(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_agent_tool_call(self, raw: dict[str, Any]) -> SentinelEvent:
         tool_name = raw.get("tool_name", "unknown")
         tool_input = raw.get("tool_input", "")
         return SentinelEvent(
@@ -515,7 +514,7 @@ class LlamaIndexSentinelAdapter:
     # Private translators — embedding
     # ------------------------------------------------------------------
 
-    def _from_embedding_started(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_embedding_started(self, raw: dict[str, Any]) -> SentinelEvent:
         model_name = raw.get("model_name", "unknown")
         num_chunks = raw.get("num_chunks", 0)
         return SentinelEvent(
@@ -529,7 +528,7 @@ class LlamaIndexSentinelAdapter:
             attributes={"model_name": model_name, "num_chunks": num_chunks},
         )
 
-    def _from_embedding_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_embedding_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         model_name = raw.get("model_name", "unknown")
         num_chunks = raw.get("num_chunks", 0)
         return SentinelEvent(
@@ -547,7 +546,7 @@ class LlamaIndexSentinelAdapter:
     # Private translator — unknown
     # ------------------------------------------------------------------
 
-    def _from_unknown(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_unknown(self, raw: dict[str, Any]) -> SentinelEvent:
         original_type = raw.get("type", "unknown")
         return SentinelEvent(
             event_id=f"llamaindex-unknown-{uuid.uuid4()}",
@@ -564,6 +563,7 @@ class LlamaIndexSentinelAdapter:
 # ---------------------------------------------------------------------------
 # Module-level helpers used by setup() handler
 # ---------------------------------------------------------------------------
+
 
 def _extract_query_str(event) -> str:
     """Best-effort query string extraction from LlamaIndex event objects."""

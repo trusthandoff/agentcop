@@ -8,11 +8,10 @@ mock OTel spans and call on_start / on_end directly.
 
 from __future__ import annotations
 
-import json
 import sys
 import threading
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -20,15 +19,16 @@ import pytest
 from agentcop import Sentinel, ViolationRecord
 from agentcop.event import SentinelEvent
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_adapter(run_id=None):
     """Return a LangfuseSentinelAdapter with the import guard bypassed."""
     with patch("agentcop.adapters.langfuse._require_langfuse"):
         from agentcop.adapters.langfuse import LangfuseSentinelAdapter
+
         return LangfuseSentinelAdapter(run_id=run_id)
 
 
@@ -67,7 +67,7 @@ def _make_span(
     extra_attrs=None,
 ):
     """Build a minimal mock OTel span with Langfuse attributes."""
-    attrs: Dict[str, Any] = {
+    attrs: dict[str, Any] = {
         "langfuse.observation.type": obs_type,
     }
     if level:
@@ -113,12 +113,14 @@ def _get_observer(mock_tp):
 # TestRequireLangfuse
 # ---------------------------------------------------------------------------
 
+
 class TestRequireLangfuse:
     def test_raises_when_langfuse_missing(self):
         with patch.dict("sys.modules", {"langfuse": None}):
             if "agentcop.adapters.langfuse" in sys.modules:
                 del sys.modules["agentcop.adapters.langfuse"]
             from agentcop.adapters.langfuse import _require_langfuse
+
             with pytest.raises(ImportError, match="langfuse"):
                 _require_langfuse()
 
@@ -126,13 +128,18 @@ class TestRequireLangfuse:
         mock_lf = MagicMock()
         with patch.dict("sys.modules", {"langfuse": mock_lf}):
             from agentcop.adapters.langfuse import _require_langfuse
+
             _require_langfuse()  # no exception
 
     def test_constructor_calls_require(self):
         called = []
-        def fake_require(): called.append(True)
+
+        def fake_require():
+            called.append(True)
+
         with patch("agentcop.adapters.langfuse._require_langfuse", fake_require):
             from agentcop.adapters.langfuse import LangfuseSentinelAdapter
+
             LangfuseSentinelAdapter()
         assert called == [True]
 
@@ -140,6 +147,7 @@ class TestRequireLangfuse:
 # ---------------------------------------------------------------------------
 # TestAdapterInit
 # ---------------------------------------------------------------------------
+
 
 class TestAdapterInit:
     def test_source_system(self):
@@ -159,12 +167,17 @@ class TestAdapterInit:
 # TestFromObservationStarted
 # ---------------------------------------------------------------------------
 
+
 class TestFromObservationStarted:
     def setup_method(self):
         self.adapter = _make_adapter(run_id="trace-started")
 
     def _ev(self, **kwargs):
-        base = {"type": "observation_started", "observation_type": "span", "observation_name": "op"}
+        base = {
+            "type": "observation_started",
+            "observation_type": "span",
+            "observation_name": "op",
+        }
         base.update(kwargs)
         return self.adapter.to_sentinel_event(base)
 
@@ -182,10 +195,12 @@ class TestFromObservationStarted:
 
     def test_trace_id_falls_back_to_langfuse_trace_id(self):
         adapter = _make_adapter()  # no run_id
-        ev = adapter.to_sentinel_event({
-            "type": "observation_started",
-            "langfuse_trace_id": "aabbcc",
-        })
+        ev = adapter.to_sentinel_event(
+            {
+                "type": "observation_started",
+                "langfuse_trace_id": "aabbcc",
+            }
+        )
         assert ev.trace_id == "aabbcc"
 
     def test_event_id_prefix(self):
@@ -226,6 +241,7 @@ class TestFromObservationStarted:
 # ---------------------------------------------------------------------------
 # TestFromSpanEvents
 # ---------------------------------------------------------------------------
+
 
 class TestFromSpanEvents:
     def setup_method(self):
@@ -293,6 +309,7 @@ class TestFromSpanEvents:
 # ---------------------------------------------------------------------------
 # TestFromGenerationEvents
 # ---------------------------------------------------------------------------
+
 
 class TestFromGenerationEvents:
     def setup_method(self):
@@ -370,6 +387,7 @@ class TestFromGenerationEvents:
 # TestFromToolEvents
 # ---------------------------------------------------------------------------
 
+
 class TestFromToolEvents:
     def setup_method(self):
         self.adapter = _make_adapter()
@@ -411,12 +429,17 @@ class TestFromToolEvents:
 # TestFromRetrieverEvents
 # ---------------------------------------------------------------------------
 
+
 class TestFromRetrieverEvents:
     def setup_method(self):
         self.adapter = _make_adapter()
 
     def _ev(self, type_="retriever_finished", **kwargs):
-        base = {"type": type_, "observation_type": "retriever", "observation_name": "vector-search"}
+        base = {
+            "type": type_,
+            "observation_type": "retriever",
+            "observation_name": "vector-search",
+        }
         base.update(kwargs)
         return self.adapter.to_sentinel_event(base)
 
@@ -445,12 +468,17 @@ class TestFromRetrieverEvents:
 # TestFromEventOccurred
 # ---------------------------------------------------------------------------
 
+
 class TestFromEventOccurred:
     def setup_method(self):
         self.adapter = _make_adapter()
 
     def _ev(self, **kwargs):
-        base = {"type": "event_occurred", "observation_type": "event", "observation_name": "cache-hit"}
+        base = {
+            "type": "event_occurred",
+            "observation_type": "event",
+            "observation_name": "cache-hit",
+        }
         base.update(kwargs)
         return self.adapter.to_sentinel_event(base)
 
@@ -472,12 +500,17 @@ class TestFromEventOccurred:
 # TestFromGuardrailEvents
 # ---------------------------------------------------------------------------
 
+
 class TestFromGuardrailEvents:
     def setup_method(self):
         self.adapter = _make_adapter()
 
     def _ev(self, type_="guardrail_finished", **kwargs):
-        base = {"type": type_, "observation_type": "guardrail", "observation_name": "content-filter"}
+        base = {
+            "type": type_,
+            "observation_type": "guardrail",
+            "observation_name": "content-filter",
+        }
         base.update(kwargs)
         return self.adapter.to_sentinel_event(base)
 
@@ -504,6 +537,7 @@ class TestFromGuardrailEvents:
 # ---------------------------------------------------------------------------
 # TestFromUnknown
 # ---------------------------------------------------------------------------
+
 
 class TestFromUnknown:
     def setup_method(self):
@@ -538,40 +572,46 @@ class TestFromUnknown:
 # TestTimestampParsing
 # ---------------------------------------------------------------------------
 
+
 class TestTimestampParsing:
     def setup_method(self):
         self.adapter = _make_adapter()
 
     def test_parses_iso_timestamp(self):
-        ev = self.adapter.to_sentinel_event({
-            "type": "span_finished",
-            "timestamp": "2026-04-01T10:00:00Z",
-        })
+        ev = self.adapter.to_sentinel_event(
+            {
+                "type": "span_finished",
+                "timestamp": "2026-04-01T10:00:00Z",
+            }
+        )
         assert ev.timestamp.year == 2026
 
     def test_parses_timestamp_with_offset(self):
-        ev = self.adapter.to_sentinel_event({
-            "type": "span_finished",
-            "timestamp": "2026-04-01T10:00:00+00:00",
-        })
+        ev = self.adapter.to_sentinel_event(
+            {
+                "type": "span_finished",
+                "timestamp": "2026-04-01T10:00:00+00:00",
+            }
+        )
         assert ev.timestamp.year == 2026
 
     def test_falls_back_to_now_on_invalid_timestamp(self):
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         ev = self.adapter.to_sentinel_event({"type": "span_finished", "timestamp": "bad"})
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
         assert before <= ev.timestamp <= after
 
     def test_falls_back_to_now_when_no_timestamp(self):
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         ev = self.adapter.to_sentinel_event({"type": "span_finished"})
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
         assert before <= ev.timestamp <= after
 
 
 # ---------------------------------------------------------------------------
 # TestDrainFlush
 # ---------------------------------------------------------------------------
+
 
 class TestDrainFlush:
     def setup_method(self):
@@ -627,6 +667,7 @@ class TestDrainFlush:
 # TestBufferThreadSafety
 # ---------------------------------------------------------------------------
 
+
 class TestBufferThreadSafety:
     def test_concurrent_buffer_events(self):
         adapter = _make_adapter()
@@ -651,7 +692,7 @@ class TestBufferThreadSafety:
 
     def test_drain_concurrent_with_buffer(self):
         adapter = _make_adapter()
-        drained: List[SentinelEvent] = []
+        drained: list[SentinelEvent] = []
         errors = []
 
         def producer():
@@ -671,8 +712,10 @@ class TestBufferThreadSafety:
 
         t1 = threading.Thread(target=producer)
         t2 = threading.Thread(target=consumer)
-        t1.start(); t2.start()
-        t1.join(); t2.join()
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
         drained.extend(adapter.drain())
 
         assert not errors
@@ -682,6 +725,7 @@ class TestBufferThreadSafety:
 # ---------------------------------------------------------------------------
 # TestSetup
 # ---------------------------------------------------------------------------
+
 
 class TestSetup:
     def _run_setup(self, run_id=None):
@@ -701,7 +745,6 @@ class TestSetup:
 
     def test_setup_uses_global_client_when_none_given(self):
         """setup() with no client should call get_client()."""
-        adapter = _make_adapter()
         mock_get_client = MagicMock()
         mock_client, mock_tp = _make_mock_client()
         mock_get_client.return_value = mock_client
@@ -711,6 +754,7 @@ class TestSetup:
             # patch get_client at the module level where it's imported inside setup
             with patch("agentcop.adapters.langfuse._require_langfuse"):
                 from agentcop.adapters.langfuse import LangfuseSentinelAdapter
+
                 a = LangfuseSentinelAdapter()
             with patch("langfuse.get_client", mock_get_client):
                 with patch.dict("sys.modules", mods):
@@ -779,8 +823,12 @@ class TestSetup:
 
     def test_on_end_generation_error(self):
         adapter, observer = self._run_setup()
-        span = _make_span(obs_type="generation", name="gpt-call", level="ERROR",
-                          extra_attrs={"langfuse.observation.status_message": "quota exceeded"})
+        span = _make_span(
+            obs_type="generation",
+            name="gpt-call",
+            level="ERROR",
+            extra_attrs={"langfuse.observation.status_message": "quota exceeded"},
+        )
         observer.on_end(span)
         events = adapter.drain()
         assert events[0].event_type == "generation_error"
@@ -825,8 +873,7 @@ class TestSetup:
         adapter, observer = self._run_setup(run_id=None)
         trace_int = 0xABCDEF1234567890ABCDEF1234567890
         span_int = 0xDEADBEEFCAFEBABE
-        span = _make_span(obs_type="span", name="op",
-                          trace_id_int=trace_int, span_id_int=span_int)
+        span = _make_span(obs_type="span", name="op", trace_id_int=trace_int, span_id_int=span_int)
         observer.on_end(span)
         ev = adapter.drain()[0]
         assert ev.attributes["langfuse_trace_id"] == format(trace_int, "032x")
@@ -851,10 +898,12 @@ class TestSetup:
 # TestModuleLevelHelpers
 # ---------------------------------------------------------------------------
 
+
 class TestSafeJsonLoad:
     def setup_method(self):
         with patch("agentcop.adapters.langfuse._require_langfuse"):
             from agentcop.adapters.langfuse import _safe_json_load
+
             self._fn = _safe_json_load
 
     def test_parses_json_string(self):
@@ -875,6 +924,7 @@ class TestIsError:
     def setup_method(self):
         with patch("agentcop.adapters.langfuse._require_langfuse"):
             from agentcop.adapters.langfuse import _is_error
+
             self._fn = _is_error
 
     def test_error_level_returns_true(self):
@@ -904,11 +954,12 @@ class TestNsToIso:
     def setup_method(self):
         with patch("agentcop.adapters.langfuse._require_langfuse"):
             from agentcop.adapters.langfuse import _ns_to_iso
+
             self._fn = _ns_to_iso
 
     def test_converts_ns_to_iso(self):
         # 2026-01-01T00:00:00 UTC in nanoseconds
-        ns = int(datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp() * 1e9)
+        ns = int(datetime(2026, 1, 1, tzinfo=UTC).timestamp() * 1e9)
         result = self._fn(ns)
         assert result is not None
         assert "2026" in result
@@ -924,6 +975,7 @@ class TestSpanToRawStart:
     def setup_method(self):
         with patch("agentcop.adapters.langfuse._require_langfuse"):
             from agentcop.adapters.langfuse import _span_to_raw_start
+
             self._fn = _span_to_raw_start
 
     def test_returns_none_for_non_langfuse_span(self):
@@ -969,6 +1021,7 @@ class TestSpanToRawEnd:
     def setup_method(self):
         with patch("agentcop.adapters.langfuse._require_langfuse"):
             from agentcop.adapters.langfuse import _span_to_raw_end
+
             self._fn = _span_to_raw_end
 
     def test_returns_none_for_non_langfuse_span(self):
@@ -1009,21 +1062,24 @@ class TestSpanToRawEnd:
         assert self._fn(span)["type"] == "unknown_langfuse_event"
 
     def test_generation_extracts_model(self):
-        span = _make_span(obs_type="generation",
-                          extra_attrs={"langfuse.observation.model.name": "gpt-4o"})
+        span = _make_span(
+            obs_type="generation", extra_attrs={"langfuse.observation.model.name": "gpt-4o"}
+        )
         result = self._fn(span)
         assert result["model"] == "gpt-4o"
 
     def test_generation_parses_usage_json(self):
-        span = _make_span(obs_type="generation", extra_attrs={
-            "langfuse.observation.usage_details": '{"prompt_tokens": 5, "completion_tokens": 3}'
-        })
+        span = _make_span(
+            obs_type="generation",
+            extra_attrs={
+                "langfuse.observation.usage_details": '{"prompt_tokens": 5, "completion_tokens": 3}'
+            },
+        )
         result = self._fn(span)
         assert result["usage"]["prompt_tokens"] == 5
 
     def test_input_truncated_to_500(self):
-        span = _make_span(obs_type="span",
-                          extra_attrs={"langfuse.observation.input": "x" * 600})
+        span = _make_span(obs_type="span", extra_attrs={"langfuse.observation.input": "x" * 600})
         result = self._fn(span)
         assert len(result["input"]) == 500
 
@@ -1042,9 +1098,11 @@ class TestSpanToRawEnd:
 # TestProtocolConformance
 # ---------------------------------------------------------------------------
 
+
 class TestProtocolConformance:
     def test_conforms_to_sentinel_adapter_protocol(self):
         from agentcop.adapters import SentinelAdapter
+
         assert isinstance(_make_adapter(), SentinelAdapter)
 
     def test_has_source_system_attr(self):
@@ -1059,6 +1117,7 @@ class TestProtocolConformance:
 # TestSentinelIntegration
 # ---------------------------------------------------------------------------
 
+
 class TestSentinelIntegration:
     def _make_sentinel_with(self, events, detectors=None):
         adapter = _make_adapter(run_id="integration")
@@ -1070,6 +1129,7 @@ class TestSentinelIntegration:
 
     def test_ingests_all_events(self):
         from agentcop.violations import DEFAULT_DETECTORS
+
         s = self._make_sentinel_with(
             [
                 {"type": "observation_started", "observation_type": "span"},
@@ -1089,9 +1149,12 @@ class TestSentinelIntegration:
                 severity="ERROR",
                 source_event_id=event.event_id,
                 trace_id=event.trace_id,
-                detail={"model": event.attributes.get("model"),
-                        "error": event.attributes.get("status_message")},
+                detail={
+                    "model": event.attributes.get("model"),
+                    "error": event.attributes.get("status_message"),
+                },
             )
+
         s = self._make_sentinel_with(
             [{"type": "generation_error", "model": "gpt-4o", "status_message": "rate limit"}],
             detectors=[detect_gen_error],
@@ -1111,9 +1174,15 @@ class TestSentinelIntegration:
                 trace_id=event.trace_id,
                 detail={"name": event.attributes["observation_name"]},
             )
+
         s = self._make_sentinel_with(
-            [{"type": "guardrail_error", "observation_name": "content-policy",
-              "status_message": "blocked"}],
+            [
+                {
+                    "type": "guardrail_error",
+                    "observation_name": "content-policy",
+                    "status_message": "blocked",
+                }
+            ],
             detectors=[detect_block],
         )
         violations = s.detect_violations()
@@ -1132,9 +1201,15 @@ class TestSentinelIntegration:
                 trace_id=event.trace_id,
                 detail={},
             )
+
         s = self._make_sentinel_with(
-            [{"type": "tool_error", "observation_name": "code-exec",
-              "status_message": "segfault"}],
+            [
+                {
+                    "type": "tool_error",
+                    "observation_name": "code-exec",
+                    "status_message": "segfault",
+                }
+            ],
             detectors=[detect_tool],
         )
         violations = s.detect_violations()
@@ -1145,9 +1220,13 @@ class TestSentinelIntegration:
             if event.severity != "ERROR":
                 return None
             return ViolationRecord(
-                violation_type="error_event", severity="ERROR",
-                source_event_id=event.event_id, trace_id=event.trace_id, detail={},
+                violation_type="error_event",
+                severity="ERROR",
+                source_event_id=event.event_id,
+                trace_id=event.trace_id,
+                detail={},
             )
+
         s = self._make_sentinel_with(
             [
                 {"type": "observation_started"},
@@ -1163,9 +1242,13 @@ class TestSentinelIntegration:
             if "error" not in event.event_type:
                 return None
             return ViolationRecord(
-                violation_type="any_error", severity="ERROR",
-                source_event_id=event.event_id, trace_id=event.trace_id, detail={},
+                violation_type="any_error",
+                severity="ERROR",
+                source_event_id=event.event_id,
+                trace_id=event.trace_id,
+                detail={},
             )
+
         s = self._make_sentinel_with(
             [
                 {"type": "generation_error", "status_message": "fail1"},

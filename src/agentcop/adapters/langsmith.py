@@ -63,8 +63,8 @@ from __future__ import annotations
 import json
 import threading
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from agentcop.event import SentinelEvent
 
@@ -128,13 +128,13 @@ class LangSmithSentinelAdapter:
 
     source_system = "langsmith"
 
-    def __init__(self, run_id: Optional[str] = None) -> None:
+    def __init__(self, run_id: str | None = None) -> None:
         _require_langsmith()
         self._run_id = run_id
-        self._buffer: List[SentinelEvent] = []
+        self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
         # Maps run_id str → start-time snapshot for correlation with update_run
-        self._inflight: Dict[str, Dict[str, Any]] = {}
+        self._inflight: dict[str, dict[str, Any]] = {}
 
     def setup(self, client=None) -> None:
         """
@@ -160,6 +160,7 @@ class LangSmithSentinelAdapter:
         """
         if client is None:
             from langsmith import Client as _Client  # type: ignore[import]
+
             client = _Client()
 
         adapter_self = self
@@ -221,8 +222,7 @@ class LangSmithSentinelAdapter:
                 # Merge any extra metadata sent with the update
                 update_extra = kwargs.get("extra") or {}
                 update_meta = (
-                    update_extra.get("metadata", {})
-                    if isinstance(update_extra, dict) else {}
+                    update_extra.get("metadata", {}) if isinstance(update_extra, dict) else {}
                 )
                 metadata = {**inflight.get("metadata", {}), **update_meta}
 
@@ -232,7 +232,7 @@ class LangSmithSentinelAdapter:
                 provider = metadata.get("ls_provider", "unknown") or "unknown"
                 usage = metadata.get("usage_metadata") or {}
 
-                raw: Dict[str, Any] = {
+                raw: dict[str, Any] = {
                     "run_id": run_id,
                     "run_name": inflight["name"],
                     "run_type": run_type,
@@ -266,7 +266,7 @@ class LangSmithSentinelAdapter:
         client.create_run = _intercepted_create
         client.update_run = _intercepted_update
 
-    def to_sentinel_event(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def to_sentinel_event(self, raw: dict[str, Any]) -> SentinelEvent:
         """
         Translate one LangSmith event dict into a SentinelEvent.
 
@@ -275,22 +275,22 @@ class LangSmithSentinelAdapter:
         with severity INFO.
         """
         dispatch = {
-            "run_started":          self._from_run_started,
-            "chain_finished":       self._from_chain_finished,
-            "chain_error":          self._from_chain_error,
-            "llm_finished":         self._from_llm_finished,
-            "llm_error":            self._from_llm_error,
-            "tool_finished":        self._from_tool_finished,
-            "tool_error":           self._from_tool_error,
-            "retriever_finished":   self._from_retriever_finished,
-            "retriever_error":      self._from_retriever_error,
-            "embedding_finished":   self._from_embedding_finished,
-            "embedding_error":      self._from_embedding_error,
+            "run_started": self._from_run_started,
+            "chain_finished": self._from_chain_finished,
+            "chain_error": self._from_chain_error,
+            "llm_finished": self._from_llm_finished,
+            "llm_error": self._from_llm_error,
+            "tool_finished": self._from_tool_finished,
+            "tool_error": self._from_tool_error,
+            "retriever_finished": self._from_retriever_finished,
+            "retriever_error": self._from_retriever_error,
+            "embedding_finished": self._from_embedding_finished,
+            "embedding_error": self._from_embedding_error,
         }
         handler = dispatch.get(raw.get("type", ""), self._from_unknown)
         return handler(raw)
 
-    def drain(self) -> List[SentinelEvent]:
+    def drain(self) -> list[SentinelEvent]:
         """Return all buffered SentinelEvents and clear the buffer."""
         with self._lock:
             events = list(self._buffer)
@@ -313,20 +313,20 @@ class LangSmithSentinelAdapter:
     # Timestamp helper
     # ------------------------------------------------------------------
 
-    def _parse_timestamp(self, raw: Dict[str, Any]) -> datetime:
+    def _parse_timestamp(self, raw: dict[str, Any]) -> datetime:
         ts = raw.get("timestamp")
         if ts:
             try:
                 return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
             except ValueError:
                 pass
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     # ------------------------------------------------------------------
     # Trace-ID: prefer run_id; fall back to LangSmith trace/run ID
     # ------------------------------------------------------------------
 
-    def _trace_id(self, raw: Dict[str, Any]) -> Optional[str]:
+    def _trace_id(self, raw: dict[str, Any]) -> str | None:
         if self._run_id:
             return self._run_id
         ls = raw.get("ls_trace_id", "")
@@ -336,7 +336,7 @@ class LangSmithSentinelAdapter:
     # Private translator — run_started
     # ------------------------------------------------------------------
 
-    def _from_run_started(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_run_started(self, raw: dict[str, Any]) -> SentinelEvent:
         run_name = raw.get("run_name", "unknown")
         run_type = raw.get("run_type", "chain")
         return SentinelEvent(
@@ -354,7 +354,7 @@ class LangSmithSentinelAdapter:
     # Private translators — chain (chain / prompt / parser)
     # ------------------------------------------------------------------
 
-    def _from_chain_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_chain_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         run_name = raw.get("run_name", "unknown")
         run_type = raw.get("run_type", "chain")
         return SentinelEvent(
@@ -368,7 +368,7 @@ class LangSmithSentinelAdapter:
             attributes=self._end_attrs(raw),
         )
 
-    def _from_chain_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_chain_error(self, raw: dict[str, Any]) -> SentinelEvent:
         run_name = raw.get("run_name", "unknown")
         run_type = raw.get("run_type", "chain")
         error = raw.get("error", "")
@@ -387,7 +387,7 @@ class LangSmithSentinelAdapter:
     # Private translators — LLM
     # ------------------------------------------------------------------
 
-    def _from_llm_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_llm_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         run_name = raw.get("run_name", "unknown")
         model = raw.get("model", "unknown")
         return SentinelEvent(
@@ -401,7 +401,7 @@ class LangSmithSentinelAdapter:
             attributes={**self._end_attrs(raw), **self._llm_attrs(raw)},
         )
 
-    def _from_llm_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_llm_error(self, raw: dict[str, Any]) -> SentinelEvent:
         run_name = raw.get("run_name", "unknown")
         model = raw.get("model", "unknown")
         error = raw.get("error", "")
@@ -420,7 +420,7 @@ class LangSmithSentinelAdapter:
     # Private translators — tool
     # ------------------------------------------------------------------
 
-    def _from_tool_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_tool_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         run_name = raw.get("run_name", "unknown")
         return SentinelEvent(
             event_id=f"ls-tool-{uuid.uuid4()}",
@@ -433,7 +433,7 @@ class LangSmithSentinelAdapter:
             attributes=self._end_attrs(raw),
         )
 
-    def _from_tool_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_tool_error(self, raw: dict[str, Any]) -> SentinelEvent:
         run_name = raw.get("run_name", "unknown")
         error = raw.get("error", "")
         return SentinelEvent(
@@ -451,7 +451,7 @@ class LangSmithSentinelAdapter:
     # Private translators — retriever
     # ------------------------------------------------------------------
 
-    def _from_retriever_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_retriever_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         run_name = raw.get("run_name", "unknown")
         return SentinelEvent(
             event_id=f"ls-retriever-{uuid.uuid4()}",
@@ -464,7 +464,7 @@ class LangSmithSentinelAdapter:
             attributes=self._end_attrs(raw),
         )
 
-    def _from_retriever_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_retriever_error(self, raw: dict[str, Any]) -> SentinelEvent:
         run_name = raw.get("run_name", "unknown")
         error = raw.get("error", "")
         return SentinelEvent(
@@ -482,7 +482,7 @@ class LangSmithSentinelAdapter:
     # Private translators — embedding
     # ------------------------------------------------------------------
 
-    def _from_embedding_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_embedding_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         run_name = raw.get("run_name", "unknown")
         return SentinelEvent(
             event_id=f"ls-embedding-{uuid.uuid4()}",
@@ -495,7 +495,7 @@ class LangSmithSentinelAdapter:
             attributes=self._end_attrs(raw),
         )
 
-    def _from_embedding_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_embedding_error(self, raw: dict[str, Any]) -> SentinelEvent:
         run_name = raw.get("run_name", "unknown")
         error = raw.get("error", "")
         return SentinelEvent(
@@ -513,7 +513,7 @@ class LangSmithSentinelAdapter:
     # Private translator — unknown
     # ------------------------------------------------------------------
 
-    def _from_unknown(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_unknown(self, raw: dict[str, Any]) -> SentinelEvent:
         original_type = raw.get("type", "unknown")
         return SentinelEvent(
             event_id=f"ls-unknown-{uuid.uuid4()}",
@@ -530,7 +530,7 @@ class LangSmithSentinelAdapter:
     # Attribute helpers
     # ------------------------------------------------------------------
 
-    def _start_attrs(self, raw: Dict[str, Any]) -> Dict[str, Any]:
+    def _start_attrs(self, raw: dict[str, Any]) -> dict[str, Any]:
         return {
             "run_id": raw.get("run_id", ""),
             "run_name": raw.get("run_name", "unknown"),
@@ -542,7 +542,7 @@ class LangSmithSentinelAdapter:
             "inputs": raw.get("inputs", ""),
         }
 
-    def _end_attrs(self, raw: Dict[str, Any]) -> Dict[str, Any]:
+    def _end_attrs(self, raw: dict[str, Any]) -> dict[str, Any]:
         return {
             "run_id": raw.get("run_id", ""),
             "run_name": raw.get("run_name", "unknown"),
@@ -556,7 +556,7 @@ class LangSmithSentinelAdapter:
             "error": raw.get("error", ""),
         }
 
-    def _llm_attrs(self, raw: Dict[str, Any]) -> Dict[str, Any]:
+    def _llm_attrs(self, raw: dict[str, Any]) -> dict[str, Any]:
         return {
             "model": raw.get("model", "unknown"),
             "provider": raw.get("provider", "unknown"),
@@ -567,6 +567,7 @@ class LangSmithSentinelAdapter:
 # ---------------------------------------------------------------------------
 # Module-level helpers
 # ---------------------------------------------------------------------------
+
 
 def _safe_json(obj: Any) -> str:
     """Serialize ``obj`` to a JSON string truncated to 500 chars."""

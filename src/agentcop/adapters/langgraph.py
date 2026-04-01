@@ -37,8 +37,9 @@ Or use ``iter_events`` for a cleaner one-liner::
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, Iterator, Optional
+from collections.abc import Iterable, Iterator
+from datetime import UTC, datetime
+from typing import Any
 
 from agentcop.event import SentinelEvent
 
@@ -88,11 +89,11 @@ class LangGraphSentinelAdapter:
 
     source_system = "langgraph"
 
-    def __init__(self, thread_id: Optional[str] = None) -> None:
+    def __init__(self, thread_id: str | None = None) -> None:
         _require_langgraph()
         self._thread_id = thread_id
 
-    def to_sentinel_event(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def to_sentinel_event(self, raw: dict[str, Any]) -> SentinelEvent:
         """Translate one LangGraph debug stream event dict into a SentinelEvent."""
         event_type = raw.get("type", "")
         if event_type == "task":
@@ -103,9 +104,7 @@ class LangGraphSentinelAdapter:
             return self._from_checkpoint(raw)
         return self._from_unknown(raw)
 
-    def iter_events(
-        self, stream: Iterable[Dict[str, Any]]
-    ) -> Iterator[SentinelEvent]:
+    def iter_events(self, stream: Iterable[dict[str, Any]]) -> Iterator[SentinelEvent]:
         """Yield a SentinelEvent for every event in a LangGraph debug stream."""
         for raw in stream:
             yield self.to_sentinel_event(raw)
@@ -114,23 +113,23 @@ class LangGraphSentinelAdapter:
     # Private translators
     # ------------------------------------------------------------------
 
-    def _parse_timestamp(self, raw: Dict[str, Any]) -> datetime:
+    def _parse_timestamp(self, raw: dict[str, Any]) -> datetime:
         ts = raw.get("timestamp")
         if ts:
             try:
                 return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
             except ValueError:
                 pass
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
-    def _resolve_thread_id(self, *candidates: Optional[str]) -> Optional[str]:
+    def _resolve_thread_id(self, *candidates: str | None) -> str | None:
         """Return the first non-empty candidate, falling back to the default."""
         for c in candidates:
             if c:
                 return c
         return self._thread_id
 
-    def _from_task(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_task(self, raw: dict[str, Any]) -> SentinelEvent:
         payload = raw.get("payload") or {}
         step = raw.get("step", 0)
         node_name = payload.get("name", "unknown")
@@ -154,7 +153,7 @@ class LangGraphSentinelAdapter:
             },
         )
 
-    def _from_task_result(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_task_result(self, raw: dict[str, Any]) -> SentinelEvent:
         payload = raw.get("payload") or {}
         step = raw.get("step", 0)
         node_name = payload.get("name", "unknown")
@@ -172,7 +171,7 @@ class LangGraphSentinelAdapter:
             severity = "INFO"
             body = f"node '{node_name}' finished (step {step})"
 
-        attrs: Dict[str, Any] = {
+        attrs: dict[str, Any] = {
             "node": node_name,
             "task_id": task_id,
             "step": step,
@@ -193,7 +192,7 @@ class LangGraphSentinelAdapter:
             attributes=attrs,
         )
 
-    def _from_checkpoint(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_checkpoint(self, raw: dict[str, Any]) -> SentinelEvent:
         payload = raw.get("payload") or {}
         step = raw.get("step", 0)
         config = payload.get("config") or {}
@@ -221,7 +220,7 @@ class LangGraphSentinelAdapter:
             },
         )
 
-    def _from_unknown(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_unknown(self, raw: dict[str, Any]) -> SentinelEvent:
         original_type = raw.get("type", "unknown")
         step = raw.get("step", 0)
         return SentinelEvent(

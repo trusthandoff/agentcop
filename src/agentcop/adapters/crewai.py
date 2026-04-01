@@ -45,8 +45,8 @@ from __future__ import annotations
 
 import threading
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from agentcop.event import SentinelEvent
 
@@ -56,8 +56,7 @@ def _require_crewai() -> None:
         import crewai  # noqa: F401
     except ImportError as exc:
         raise ImportError(
-            "CrewAI adapter requires 'crewai'. "
-            "Install it with: pip install agentcop[crewai]"
+            "CrewAI adapter requires 'crewai'. Install it with: pip install agentcop[crewai]"
         ) from exc
 
 
@@ -102,10 +101,10 @@ class CrewAISentinelAdapter:
 
     source_system = "crewai"
 
-    def __init__(self, run_id: Optional[str] = None) -> None:
+    def __init__(self, run_id: str | None = None) -> None:
         _require_crewai()
         self._run_id = run_id
-        self._buffer: List[SentinelEvent] = []
+        self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
 
     def setup(self, event_bus=None) -> None:
@@ -134,6 +133,8 @@ class CrewAISentinelAdapter:
             ToolUsageErrorEvent,
             ToolUsageFinishedEvent,
             ToolUsageStartedEvent,
+        )
+        from crewai.utilities.events import (
             crewai_event_bus as _default_bus,
         )
 
@@ -141,123 +142,171 @@ class CrewAISentinelAdapter:
 
         @bus.on(CrewKickoffStartedEvent)
         def _on_crew_kickoff_started(source, event):
-            self._buffer_event(self.to_sentinel_event({
-                "type": "crew_kickoff_started",
-                "timestamp": _ts(event),
-                "crew_name": getattr(event, "crew_name", None) or _name(source),
-            }))
+            self._buffer_event(
+                self.to_sentinel_event(
+                    {
+                        "type": "crew_kickoff_started",
+                        "timestamp": _ts(event),
+                        "crew_name": getattr(event, "crew_name", None) or _name(source),
+                    }
+                )
+            )
 
         @bus.on(CrewKickoffCompletedEvent)
         def _on_crew_kickoff_completed(source, event):
-            self._buffer_event(self.to_sentinel_event({
-                "type": "crew_kickoff_completed",
-                "timestamp": _ts(event),
-                "crew_name": getattr(event, "crew_name", None) or _name(source),
-                "output": str(getattr(event, "output", "") or "")[:500],
-            }))
+            self._buffer_event(
+                self.to_sentinel_event(
+                    {
+                        "type": "crew_kickoff_completed",
+                        "timestamp": _ts(event),
+                        "crew_name": getattr(event, "crew_name", None) or _name(source),
+                        "output": str(getattr(event, "output", "") or "")[:500],
+                    }
+                )
+            )
 
         @bus.on(CrewKickoffFailedEvent)
         def _on_crew_kickoff_failed(source, event):
-            self._buffer_event(self.to_sentinel_event({
-                "type": "crew_kickoff_failed",
-                "timestamp": _ts(event),
-                "crew_name": getattr(event, "crew_name", None) or _name(source),
-                "error": str(getattr(event, "error", "") or ""),
-            }))
+            self._buffer_event(
+                self.to_sentinel_event(
+                    {
+                        "type": "crew_kickoff_failed",
+                        "timestamp": _ts(event),
+                        "crew_name": getattr(event, "crew_name", None) or _name(source),
+                        "error": str(getattr(event, "error", "") or ""),
+                    }
+                )
+            )
 
         @bus.on(AgentExecutionStartedEvent)
         def _on_agent_started(source, event):
             agent = getattr(event, "agent", None) or source
-            self._buffer_event(self.to_sentinel_event({
-                "type": "agent_execution_started",
-                "timestamp": _ts(event),
-                "agent_role": getattr(agent, "role", str(agent)),
-            }))
+            self._buffer_event(
+                self.to_sentinel_event(
+                    {
+                        "type": "agent_execution_started",
+                        "timestamp": _ts(event),
+                        "agent_role": getattr(agent, "role", str(agent)),
+                    }
+                )
+            )
 
         @bus.on(AgentExecutionCompletedEvent)
         def _on_agent_completed(source, event):
             agent = getattr(event, "agent", None) or source
-            self._buffer_event(self.to_sentinel_event({
-                "type": "agent_execution_completed",
-                "timestamp": _ts(event),
-                "agent_role": getattr(agent, "role", str(agent)),
-                "output": str(getattr(event, "output", "") or "")[:500],
-            }))
+            self._buffer_event(
+                self.to_sentinel_event(
+                    {
+                        "type": "agent_execution_completed",
+                        "timestamp": _ts(event),
+                        "agent_role": getattr(agent, "role", str(agent)),
+                        "output": str(getattr(event, "output", "") or "")[:500],
+                    }
+                )
+            )
 
         @bus.on(AgentExecutionErrorEvent)
         def _on_agent_error(source, event):
             agent = getattr(event, "agent", None) or source
-            self._buffer_event(self.to_sentinel_event({
-                "type": "agent_execution_error",
-                "timestamp": _ts(event),
-                "agent_role": getattr(agent, "role", str(agent)),
-                "error": str(getattr(event, "error", "") or ""),
-            }))
+            self._buffer_event(
+                self.to_sentinel_event(
+                    {
+                        "type": "agent_execution_error",
+                        "timestamp": _ts(event),
+                        "agent_role": getattr(agent, "role", str(agent)),
+                        "error": str(getattr(event, "error", "") or ""),
+                    }
+                )
+            )
 
         @bus.on(TaskStartedEvent)
         def _on_task_started(source, event):
             task = getattr(event, "task", None) or source
-            self._buffer_event(self.to_sentinel_event({
-                "type": "task_started",
-                "timestamp": _ts(event),
-                "task_description": _desc(task),
-                "agent_role": _agent_role(task),
-            }))
+            self._buffer_event(
+                self.to_sentinel_event(
+                    {
+                        "type": "task_started",
+                        "timestamp": _ts(event),
+                        "task_description": _desc(task),
+                        "agent_role": _agent_role(task),
+                    }
+                )
+            )
 
         @bus.on(TaskCompletedEvent)
         def _on_task_completed(source, event):
             task = getattr(event, "task", None) or source
             output = getattr(event, "output", None)
-            self._buffer_event(self.to_sentinel_event({
-                "type": "task_completed",
-                "timestamp": _ts(event),
-                "task_description": _desc(task),
-                "output": str(getattr(output, "raw", output) or "")[:500],
-            }))
+            self._buffer_event(
+                self.to_sentinel_event(
+                    {
+                        "type": "task_completed",
+                        "timestamp": _ts(event),
+                        "task_description": _desc(task),
+                        "output": str(getattr(output, "raw", output) or "")[:500],
+                    }
+                )
+            )
 
         @bus.on(TaskFailedEvent)
         def _on_task_failed(source, event):
             task = getattr(event, "task", None) or source
-            self._buffer_event(self.to_sentinel_event({
-                "type": "task_failed",
-                "timestamp": _ts(event),
-                "task_description": _desc(task),
-                "error": str(getattr(event, "error", "") or ""),
-            }))
+            self._buffer_event(
+                self.to_sentinel_event(
+                    {
+                        "type": "task_failed",
+                        "timestamp": _ts(event),
+                        "task_description": _desc(task),
+                        "error": str(getattr(event, "error", "") or ""),
+                    }
+                )
+            )
 
         @bus.on(ToolUsageStartedEvent)
         def _on_tool_started(source, event):
             tool = getattr(event, "tool", None)
-            self._buffer_event(self.to_sentinel_event({
-                "type": "tool_usage_started",
-                "timestamp": _ts(event),
-                "tool_name": getattr(tool, "name", str(tool)) if tool else "unknown",
-                "agent_role": _name(source),
-            }))
+            self._buffer_event(
+                self.to_sentinel_event(
+                    {
+                        "type": "tool_usage_started",
+                        "timestamp": _ts(event),
+                        "tool_name": getattr(tool, "name", str(tool)) if tool else "unknown",
+                        "agent_role": _name(source),
+                    }
+                )
+            )
 
         @bus.on(ToolUsageFinishedEvent)
         def _on_tool_finished(source, event):
             tool = getattr(event, "tool", None)
-            self._buffer_event(self.to_sentinel_event({
-                "type": "tool_usage_finished",
-                "timestamp": _ts(event),
-                "tool_name": getattr(tool, "name", str(tool)) if tool else "unknown",
-                "agent_role": _name(source),
-                "from_cache": bool(getattr(event, "from_cache", False)),
-            }))
+            self._buffer_event(
+                self.to_sentinel_event(
+                    {
+                        "type": "tool_usage_finished",
+                        "timestamp": _ts(event),
+                        "tool_name": getattr(tool, "name", str(tool)) if tool else "unknown",
+                        "agent_role": _name(source),
+                        "from_cache": bool(getattr(event, "from_cache", False)),
+                    }
+                )
+            )
 
         @bus.on(ToolUsageErrorEvent)
         def _on_tool_error(source, event):
             tool = getattr(event, "tool", None)
-            self._buffer_event(self.to_sentinel_event({
-                "type": "tool_usage_error",
-                "timestamp": _ts(event),
-                "tool_name": getattr(tool, "name", str(tool)) if tool else "unknown",
-                "agent_role": _name(source),
-                "error": str(getattr(event, "error", "") or ""),
-            }))
+            self._buffer_event(
+                self.to_sentinel_event(
+                    {
+                        "type": "tool_usage_error",
+                        "timestamp": _ts(event),
+                        "tool_name": getattr(tool, "name", str(tool)) if tool else "unknown",
+                        "agent_role": _name(source),
+                        "error": str(getattr(event, "error", "") or ""),
+                    }
+                )
+            )
 
-    def to_sentinel_event(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def to_sentinel_event(self, raw: dict[str, Any]) -> SentinelEvent:
         """
         Translate one CrewAI event dict into a SentinelEvent.
 
@@ -266,23 +315,23 @@ class CrewAISentinelAdapter:
         ``unknown_crewai_event`` with severity INFO.
         """
         dispatch = {
-            "crew_kickoff_started":    self._from_crew_kickoff_started,
-            "crew_kickoff_completed":  self._from_crew_kickoff_completed,
-            "crew_kickoff_failed":     self._from_crew_kickoff_failed,
+            "crew_kickoff_started": self._from_crew_kickoff_started,
+            "crew_kickoff_completed": self._from_crew_kickoff_completed,
+            "crew_kickoff_failed": self._from_crew_kickoff_failed,
             "agent_execution_started": self._from_agent_execution_started,
             "agent_execution_completed": self._from_agent_execution_completed,
-            "agent_execution_error":   self._from_agent_execution_error,
-            "task_started":            self._from_task_started,
-            "task_completed":          self._from_task_completed,
-            "task_failed":             self._from_task_failed,
-            "tool_usage_started":      self._from_tool_usage_started,
-            "tool_usage_finished":     self._from_tool_usage_finished,
-            "tool_usage_error":        self._from_tool_usage_error,
+            "agent_execution_error": self._from_agent_execution_error,
+            "task_started": self._from_task_started,
+            "task_completed": self._from_task_completed,
+            "task_failed": self._from_task_failed,
+            "tool_usage_started": self._from_tool_usage_started,
+            "tool_usage_finished": self._from_tool_usage_finished,
+            "tool_usage_error": self._from_tool_usage_error,
         }
         handler = dispatch.get(raw.get("type", ""), self._from_unknown)
         return handler(raw)
 
-    def drain(self) -> List[SentinelEvent]:
+    def drain(self) -> list[SentinelEvent]:
         """Return all buffered SentinelEvents and clear the buffer."""
         with self._lock:
             events = list(self._buffer)
@@ -305,20 +354,20 @@ class CrewAISentinelAdapter:
     # Timestamp helper
     # ------------------------------------------------------------------
 
-    def _parse_timestamp(self, raw: Dict[str, Any]) -> datetime:
+    def _parse_timestamp(self, raw: dict[str, Any]) -> datetime:
         ts = raw.get("timestamp")
         if ts:
             try:
                 return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
             except ValueError:
                 pass
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     # ------------------------------------------------------------------
     # Private translators
     # ------------------------------------------------------------------
 
-    def _from_crew_kickoff_started(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_crew_kickoff_started(self, raw: dict[str, Any]) -> SentinelEvent:
         crew_name = raw.get("crew_name", "unknown")
         return SentinelEvent(
             event_id=f"crewai-crew-{uuid.uuid4()}",
@@ -331,7 +380,7 @@ class CrewAISentinelAdapter:
             attributes={"crew_name": crew_name},
         )
 
-    def _from_crew_kickoff_completed(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_crew_kickoff_completed(self, raw: dict[str, Any]) -> SentinelEvent:
         crew_name = raw.get("crew_name", "unknown")
         return SentinelEvent(
             event_id=f"crewai-crew-{uuid.uuid4()}",
@@ -347,7 +396,7 @@ class CrewAISentinelAdapter:
             },
         )
 
-    def _from_crew_kickoff_failed(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_crew_kickoff_failed(self, raw: dict[str, Any]) -> SentinelEvent:
         crew_name = raw.get("crew_name", "unknown")
         error = raw.get("error", "")
         return SentinelEvent(
@@ -361,7 +410,7 @@ class CrewAISentinelAdapter:
             attributes={"crew_name": crew_name, "error": error},
         )
 
-    def _from_agent_execution_started(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_agent_execution_started(self, raw: dict[str, Any]) -> SentinelEvent:
         agent_role = raw.get("agent_role", "unknown")
         return SentinelEvent(
             event_id=f"crewai-agent-{uuid.uuid4()}",
@@ -374,7 +423,7 @@ class CrewAISentinelAdapter:
             attributes={"agent_role": agent_role},
         )
 
-    def _from_agent_execution_completed(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_agent_execution_completed(self, raw: dict[str, Any]) -> SentinelEvent:
         agent_role = raw.get("agent_role", "unknown")
         return SentinelEvent(
             event_id=f"crewai-agent-{uuid.uuid4()}",
@@ -390,7 +439,7 @@ class CrewAISentinelAdapter:
             },
         )
 
-    def _from_agent_execution_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_agent_execution_error(self, raw: dict[str, Any]) -> SentinelEvent:
         agent_role = raw.get("agent_role", "unknown")
         error = raw.get("error", "")
         return SentinelEvent(
@@ -404,10 +453,10 @@ class CrewAISentinelAdapter:
             attributes={"agent_role": agent_role, "error": error},
         )
 
-    def _from_task_started(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_task_started(self, raw: dict[str, Any]) -> SentinelEvent:
         task_description = raw.get("task_description", "unknown")
         agent_role = raw.get("agent_role", "")
-        attrs: Dict[str, Any] = {"task_description": task_description}
+        attrs: dict[str, Any] = {"task_description": task_description}
         if agent_role:
             attrs["agent_role"] = agent_role
         return SentinelEvent(
@@ -421,7 +470,7 @@ class CrewAISentinelAdapter:
             attributes=attrs,
         )
 
-    def _from_task_completed(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_task_completed(self, raw: dict[str, Any]) -> SentinelEvent:
         task_description = raw.get("task_description", "unknown")
         return SentinelEvent(
             event_id=f"crewai-task-{uuid.uuid4()}",
@@ -437,7 +486,7 @@ class CrewAISentinelAdapter:
             },
         )
 
-    def _from_task_failed(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_task_failed(self, raw: dict[str, Any]) -> SentinelEvent:
         task_description = raw.get("task_description", "unknown")
         error = raw.get("error", "")
         return SentinelEvent(
@@ -451,7 +500,7 @@ class CrewAISentinelAdapter:
             attributes={"task_description": task_description, "error": error},
         )
 
-    def _from_tool_usage_started(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_tool_usage_started(self, raw: dict[str, Any]) -> SentinelEvent:
         tool_name = raw.get("tool_name", "unknown")
         agent_role = raw.get("agent_role", "unknown")
         return SentinelEvent(
@@ -465,7 +514,7 @@ class CrewAISentinelAdapter:
             attributes={"tool_name": tool_name, "agent_role": agent_role},
         )
 
-    def _from_tool_usage_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_tool_usage_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         tool_name = raw.get("tool_name", "unknown")
         agent_role = raw.get("agent_role", "unknown")
         return SentinelEvent(
@@ -483,7 +532,7 @@ class CrewAISentinelAdapter:
             },
         )
 
-    def _from_tool_usage_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_tool_usage_error(self, raw: dict[str, Any]) -> SentinelEvent:
         tool_name = raw.get("tool_name", "unknown")
         agent_role = raw.get("agent_role", "unknown")
         error = raw.get("error", "")
@@ -498,7 +547,7 @@ class CrewAISentinelAdapter:
             attributes={"tool_name": tool_name, "agent_role": agent_role, "error": error},
         )
 
-    def _from_unknown(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_unknown(self, raw: dict[str, Any]) -> SentinelEvent:
         original_type = raw.get("type", "unknown")
         return SentinelEvent(
             event_id=f"crewai-unknown-{uuid.uuid4()}",
@@ -516,7 +565,8 @@ class CrewAISentinelAdapter:
 # Module-level helpers used by setup() handlers
 # ---------------------------------------------------------------------------
 
-def _ts(event) -> Optional[str]:
+
+def _ts(event) -> str | None:
     """Extract ISO timestamp string from a CrewAI event object."""
     ts = getattr(event, "timestamp", None)
     return str(ts) if ts is not None else None
@@ -524,11 +574,7 @@ def _ts(event) -> Optional[str]:
 
 def _name(obj) -> str:
     """Best-effort display name from a CrewAI source object."""
-    return (
-        getattr(obj, "name", None)
-        or getattr(obj, "role", None)
-        or str(obj)
-    )
+    return getattr(obj, "name", None) or getattr(obj, "role", None) or str(obj)
 
 
 def _desc(task) -> str:

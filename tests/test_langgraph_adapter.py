@@ -1,6 +1,6 @@
 """Tests for LangGraphSentinelAdapter."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -13,6 +13,7 @@ def _make_adapter(thread_id=None):
     """Construct a LangGraphSentinelAdapter with the langgraph guard bypassed."""
     with patch("agentcop.adapters.langgraph._require_langgraph"):
         from agentcop.adapters.langgraph import LangGraphSentinelAdapter
+
         return LangGraphSentinelAdapter(thread_id=thread_id)
 
 
@@ -30,9 +31,11 @@ def adapter_no_thread():
 # Guard / import
 # ---------------------------------------------------------------------------
 
+
 class TestRequireLangGraph:
     def test_raises_import_error_when_langgraph_missing(self):
         import builtins
+
         real_import = builtins.__import__
 
         def mock_import(name, *args, **kwargs):
@@ -42,12 +45,14 @@ class TestRequireLangGraph:
 
         with patch("builtins.__import__", side_effect=mock_import):
             from agentcop.adapters.langgraph import _require_langgraph
+
             with pytest.raises(ImportError, match="pip install agentcop\\[langgraph\\]"):
                 _require_langgraph()
 
     def test_does_not_raise_when_langgraph_present(self):
         with patch("builtins.__import__", return_value=MagicMock()):
             from agentcop.adapters.langgraph import _require_langgraph
+
             _require_langgraph()  # must not raise
 
 
@@ -55,6 +60,7 @@ class TestAdapterInit:
     def test_constructor_calls_require_langgraph(self):
         with patch("agentcop.adapters.langgraph._require_langgraph") as mock_guard:
             from agentcop.adapters.langgraph import LangGraphSentinelAdapter
+
             LangGraphSentinelAdapter()
             mock_guard.assert_called_once()
 
@@ -72,6 +78,7 @@ class TestAdapterInit:
 # ---------------------------------------------------------------------------
 # task events → node_start
 # ---------------------------------------------------------------------------
+
 
 class TestFromTask:
     def _raw(self, **overrides):
@@ -165,6 +172,7 @@ class TestFromTask:
 # task_result events → node_end / node_error
 # ---------------------------------------------------------------------------
 
+
 class TestFromTaskResult:
     def _raw_success(self, **overrides):
         base = {
@@ -249,6 +257,7 @@ class TestFromTaskResult:
 # checkpoint events → checkpoint_saved
 # ---------------------------------------------------------------------------
 
+
 class TestFromCheckpoint:
     def _raw(self, **overrides):
         base = {
@@ -331,6 +340,7 @@ class TestFromCheckpoint:
 # Unknown event types
 # ---------------------------------------------------------------------------
 
+
 class TestFromUnknown:
     def test_event_type_is_unknown_langgraph_event(self, adapter):
         e = adapter.to_sentinel_event({"type": "metadata", "step": 0})
@@ -368,39 +378,53 @@ class TestFromUnknown:
 # Timestamp parsing
 # ---------------------------------------------------------------------------
 
+
 class TestTimestampParsing:
     def test_iso_z_suffix_parsed(self, adapter):
-        e = adapter.to_sentinel_event({
-            "type": "task", "timestamp": "2026-06-15T08:30:00Z", "step": 0,
-            "payload": {"id": "t1", "name": "n"},
-        })
-        assert e.timestamp == datetime(2026, 6, 15, 8, 30, 0, tzinfo=timezone.utc)
+        e = adapter.to_sentinel_event(
+            {
+                "type": "task",
+                "timestamp": "2026-06-15T08:30:00Z",
+                "step": 0,
+                "payload": {"id": "t1", "name": "n"},
+            }
+        )
+        assert e.timestamp == datetime(2026, 6, 15, 8, 30, 0, tzinfo=UTC)
 
     def test_iso_offset_parsed(self, adapter):
-        e = adapter.to_sentinel_event({
-            "type": "task", "timestamp": "2026-06-15T08:30:00+00:00", "step": 0,
-            "payload": {"id": "t1", "name": "n"},
-        })
+        e = adapter.to_sentinel_event(
+            {
+                "type": "task",
+                "timestamp": "2026-06-15T08:30:00+00:00",
+                "step": 0,
+                "payload": {"id": "t1", "name": "n"},
+            }
+        )
         assert e.timestamp.year == 2026
 
     def test_missing_timestamp_uses_now(self, adapter):
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         e = adapter.to_sentinel_event({"type": "task", "step": 0})
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
         assert before <= e.timestamp <= after
 
     def test_invalid_timestamp_falls_back_to_now(self, adapter):
-        before = datetime.now(timezone.utc)
-        e = adapter.to_sentinel_event({
-            "type": "task", "timestamp": "not-a-date", "step": 0,
-        })
-        after = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
+        e = adapter.to_sentinel_event(
+            {
+                "type": "task",
+                "timestamp": "not-a-date",
+                "step": 0,
+            }
+        )
+        after = datetime.now(UTC)
         assert before <= e.timestamp <= after
 
 
 # ---------------------------------------------------------------------------
 # iter_events
 # ---------------------------------------------------------------------------
+
 
 class TestIterEvents:
     def _stream(self):
@@ -415,7 +439,13 @@ class TestIterEvents:
                 "type": "task_result",
                 "timestamp": "2026-01-01T00:00:01Z",
                 "step": 1,
-                "payload": {"id": "t1", "name": "node_a", "error": None, "interrupts": [], "metadata": {}},
+                "payload": {
+                    "id": "t1",
+                    "name": "node_a",
+                    "error": None,
+                    "interrupts": [],
+                    "metadata": {},
+                },
             },
             {
                 "type": "checkpoint",
@@ -435,6 +465,7 @@ class TestIterEvents:
 
     def test_yields_sentinel_events(self, adapter):
         from agentcop import SentinelEvent
+
         for e in adapter.iter_events(self._stream()):
             assert isinstance(e, SentinelEvent)
 
@@ -446,6 +477,7 @@ class TestIterEvents:
 
     def test_accepts_generator(self, adapter):
         from agentcop import SentinelEvent
+
         events = list(adapter.iter_events(e for e in self._stream()))
         assert all(isinstance(e, SentinelEvent) for e in events)
 
@@ -457,9 +489,11 @@ class TestIterEvents:
 # SentinelAdapter protocol conformance
 # ---------------------------------------------------------------------------
 
+
 class TestProtocolConformance:
     def test_satisfies_sentinel_adapter_protocol(self, adapter):
         from agentcop import SentinelAdapter
+
         assert isinstance(adapter, SentinelAdapter)
 
     def test_source_system_attribute(self, adapter):
@@ -472,6 +506,7 @@ class TestProtocolConformance:
 # ---------------------------------------------------------------------------
 # Integration with Sentinel
 # ---------------------------------------------------------------------------
+
 
 class TestSentinelIntegration:
     def test_ingest_via_iter_events(self, adapter):
@@ -488,7 +523,13 @@ class TestSentinelIntegration:
                 "type": "task_result",
                 "timestamp": "2026-01-01T00:00:01Z",
                 "step": 1,
-                "payload": {"id": "t1", "name": "planner", "error": None, "interrupts": [], "metadata": {}},
+                "payload": {
+                    "id": "t1",
+                    "name": "planner",
+                    "error": None,
+                    "interrupts": [],
+                    "metadata": {},
+                },
             },
         ]
 
@@ -542,10 +583,25 @@ class TestSentinelIntegration:
         from agentcop import Sentinel
 
         stream = [
-            {"type": "task", "step": 1, "payload": {"id": "t1", "name": "a", "triggers": [], "metadata": {}}},
-            {"type": "task_result", "step": 1, "payload": {"id": "t1", "name": "a", "error": None, "interrupts": [], "metadata": {}}},
             {
-                "type": "checkpoint", "step": 1,
+                "type": "task",
+                "step": 1,
+                "payload": {"id": "t1", "name": "a", "triggers": [], "metadata": {}},
+            },
+            {
+                "type": "task_result",
+                "step": 1,
+                "payload": {
+                    "id": "t1",
+                    "name": "a",
+                    "error": None,
+                    "interrupts": [],
+                    "metadata": {},
+                },
+            },
+            {
+                "type": "checkpoint",
+                "step": 1,
                 "payload": {
                     "config": {"configurable": {"thread_id": "run-xyz", "checkpoint_id": "ck-1"}},
                     "metadata": {"source": "loop"},

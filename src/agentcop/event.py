@@ -1,6 +1,6 @@
-from datetime import datetime, timezone
-from typing import Any, Dict, Literal, Optional
 import uuid
+from datetime import UTC, datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -26,15 +26,13 @@ class SentinelEvent(BaseModel):
     event_id: str
     event_type: str
     timestamp: datetime
-    observed_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     severity: Literal["INFO", "WARN", "ERROR", "CRITICAL"]
-    producer_id: Optional[str] = None
-    trace_id: Optional[str] = None     # OTel TraceId / correlation_id
-    span_id: Optional[str] = None      # OTel SpanId, optional
+    producer_id: str | None = None
+    trace_id: str | None = None  # OTel TraceId / correlation_id
+    span_id: str | None = None  # OTel SpanId, optional
     body: str
-    attributes: Dict[str, Any] = Field(default_factory=dict)
+    attributes: dict[str, Any] = Field(default_factory=dict)
     source_system: str
 
 
@@ -49,9 +47,7 @@ class ViolationRecord(BaseModel):
     violation_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     violation_type: str
     severity: Literal["WARN", "ERROR", "CRITICAL"]
-    detected_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    detected_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source_event_id: str
-    trace_id: Optional[str] = None
-    detail: Dict[str, Any] = Field(default_factory=dict)
+    trace_id: str | None = None
+    detail: dict[str, Any] = Field(default_factory=dict)

@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import sys
 import threading
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import datetime
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -19,15 +19,16 @@ import pytest
 from agentcop import Sentinel, ViolationRecord
 from agentcop.event import SentinelEvent
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_adapter(run_id=None):
     """Return a DatadogSentinelAdapter with the import guard bypassed."""
     with patch("agentcop.adapters.datadog._require_ddtrace"):
         from agentcop.adapters.datadog import DatadogSentinelAdapter
+
         return DatadogSentinelAdapter(run_id=run_id)
 
 
@@ -59,8 +60,8 @@ def _make_span(
     parent_id=0,
     duration=1_500_000,
     start_ns=1_700_000_000_000_000_000,
-    tags: Optional[Dict[str, Any]] = None,
-    metrics: Optional[Dict[str, float]] = None,
+    tags: dict[str, Any] | None = None,
+    metrics: dict[str, float] | None = None,
 ):
     """Build a minimal mock ddtrace Span."""
     span = MagicMock()
@@ -75,10 +76,10 @@ def _make_span(
     span.start_ns = start_ns
     span.start = (start_ns / 1e9) if start_ns is not None else 0.0
 
-    all_tags: Dict[str, Any] = {"component": component, "span.kind": span_kind}
+    all_tags: dict[str, Any] = {"component": component, "span.kind": span_kind}
     if tags:
         all_tags.update(tags)
-    all_metrics: Dict[str, float] = dict(metrics or {})
+    all_metrics: dict[str, float] = dict(metrics or {})
 
     def get_tag(key):
         return all_tags.get(key)
@@ -100,23 +101,27 @@ def _write(tracer, spans):
 # TestRequireDdtrace
 # ---------------------------------------------------------------------------
 
+
 class TestRequireDdtrace:
     def test_raises_when_ddtrace_missing(self):
         with patch.dict(sys.modules, {"ddtrace": None}):
             with pytest.raises(ImportError, match="ddtrace"):
                 from agentcop.adapters.datadog import _require_ddtrace
+
                 _require_ddtrace()
 
     def test_passes_when_ddtrace_available(self):
         fake = MagicMock()
         with patch.dict(sys.modules, {"ddtrace": fake}):
             from agentcop.adapters.datadog import _require_ddtrace
+
             _require_ddtrace()  # must not raise
 
 
 # ---------------------------------------------------------------------------
 # TestAdapterInit
 # ---------------------------------------------------------------------------
+
 
 class TestAdapterInit:
     def test_source_system(self):
@@ -139,6 +144,7 @@ class TestAdapterInit:
 # ---------------------------------------------------------------------------
 # TestFromSpanFinished
 # ---------------------------------------------------------------------------
+
 
 class TestFromSpanFinished:
     def test_event_type(self):
@@ -172,7 +178,9 @@ class TestFromSpanFinished:
 
     def test_trace_id_from_dd_trace_id(self):
         adapter = _make_adapter()
-        ev = adapter.to_sentinel_event({"type": "span_finished", "dd_trace_id": "abcdef0123456789"})
+        ev = adapter.to_sentinel_event(
+            {"type": "span_finished", "dd_trace_id": "abcdef0123456789"}
+        )
         assert ev.trace_id == "abcdef0123456789"
 
     def test_trace_id_none_when_unset(self):
@@ -197,12 +205,14 @@ class TestFromSpanFinished:
         assert ev.attributes["error"] is False
 
     def test_attributes_dd_span_ids(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "span_finished",
-            "dd_trace_id": "aaaa",
-            "dd_span_id": "bbbb",
-            "dd_parent_id": "cccc",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "span_finished",
+                "dd_trace_id": "aaaa",
+                "dd_span_id": "bbbb",
+                "dd_parent_id": "cccc",
+            }
+        )
         assert ev.attributes["dd_trace_id"] == "aaaa"
         assert ev.attributes["dd_span_id"] == "bbbb"
         assert ev.attributes["dd_parent_id"] == "cccc"
@@ -211,6 +221,7 @@ class TestFromSpanFinished:
 # ---------------------------------------------------------------------------
 # TestFromSpanError
 # ---------------------------------------------------------------------------
+
 
 class TestFromSpanError:
     def test_event_type(self):
@@ -226,11 +237,13 @@ class TestFromSpanError:
         assert ev.event_id.startswith("dd-span-")
 
     def test_body_contains_error_message(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "span_error",
-            "span_name": "my-op",
-            "error_message": "connection refused",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "span_error",
+                "span_name": "my-op",
+                "error_message": "connection refused",
+            }
+        )
         assert "connection refused" in ev.body
 
     def test_attributes_error_true(self):
@@ -238,23 +251,28 @@ class TestFromSpanError:
         assert ev.attributes["error"] is True
 
     def test_attributes_error_type(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "span_error",
-            "error_type": "ConnectionError",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "span_error",
+                "error_type": "ConnectionError",
+            }
+        )
         assert ev.attributes["error_type"] == "ConnectionError"
 
     def test_attributes_error_message(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "span_error",
-            "error_message": "timeout",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "span_error",
+                "error_message": "timeout",
+            }
+        )
         assert ev.attributes["error_message"] == "timeout"
 
 
 # ---------------------------------------------------------------------------
 # TestFromLLMSpanFinished
 # ---------------------------------------------------------------------------
+
 
 class TestFromLLMSpanFinished:
     def test_event_type(self):
@@ -270,50 +288,62 @@ class TestFromLLMSpanFinished:
         assert ev.event_id.startswith("dd-llm-")
 
     def test_body_contains_model(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "llm_span_finished",
-            "span_name": "openai.request",
-            "model": "gpt-4o-mini",
-            "component": "openai",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "llm_span_finished",
+                "span_name": "openai.request",
+                "model": "gpt-4o-mini",
+                "component": "openai",
+            }
+        )
         assert "gpt-4o-mini" in ev.body
 
     def test_body_contains_provider(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "llm_span_finished",
-            "span_name": "openai.request",
-            "provider": "openai",
-            "component": "openai",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "llm_span_finished",
+                "span_name": "openai.request",
+                "provider": "openai",
+                "component": "openai",
+            }
+        )
         assert "openai" in ev.body
 
     def test_attributes_model(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "llm_span_finished",
-            "model": "gpt-4o",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "llm_span_finished",
+                "model": "gpt-4o",
+            }
+        )
         assert ev.attributes["model"] == "gpt-4o"
 
     def test_attributes_provider(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "llm_span_finished",
-            "provider": "openai",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "llm_span_finished",
+                "provider": "openai",
+            }
+        )
         assert ev.attributes["provider"] == "openai"
 
     def test_attributes_provider_falls_back_to_component(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "llm_span_finished",
-            "component": "anthropic",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "llm_span_finished",
+                "component": "anthropic",
+            }
+        )
         assert ev.attributes["provider"] == "anthropic"
 
     def test_attributes_usage(self):
         usage = {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30}
-        ev = _make_adapter().to_sentinel_event({
-            "type": "llm_span_finished",
-            "usage": usage,
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "llm_span_finished",
+                "usage": usage,
+            }
+        )
         assert ev.attributes["usage"] == usage
 
     def test_attributes_usage_defaults_empty(self):
@@ -329,6 +359,7 @@ class TestFromLLMSpanFinished:
 # TestFromLLMSpanError
 # ---------------------------------------------------------------------------
 
+
 class TestFromLLMSpanError:
     def test_event_type(self):
         ev = _make_adapter().to_sentinel_event({"type": "llm_span_error"})
@@ -343,27 +374,33 @@ class TestFromLLMSpanError:
         assert ev.event_id.startswith("dd-llm-")
 
     def test_body_contains_error_message(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "llm_span_error",
-            "model": "gpt-4o",
-            "error_message": "rate limit exceeded",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "llm_span_error",
+                "model": "gpt-4o",
+                "error_message": "rate limit exceeded",
+            }
+        )
         assert "rate limit exceeded" in ev.body
 
     def test_body_contains_model(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "llm_span_error",
-            "model": "claude-3-opus",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "llm_span_error",
+                "model": "claude-3-opus",
+            }
+        )
         assert "claude-3-opus" in ev.body
 
     def test_attributes_include_llm_attrs(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "llm_span_error",
-            "model": "gpt-4o",
-            "provider": "openai",
-            "usage": {"total_tokens": 5},
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "llm_span_error",
+                "model": "gpt-4o",
+                "provider": "openai",
+                "usage": {"total_tokens": 5},
+            }
+        )
         assert ev.attributes["model"] == "gpt-4o"
         assert ev.attributes["provider"] == "openai"
         assert ev.attributes["usage"] == {"total_tokens": 5}
@@ -372,6 +409,7 @@ class TestFromLLMSpanError:
 # ---------------------------------------------------------------------------
 # TestFromHTTPSpanFinished
 # ---------------------------------------------------------------------------
+
 
 class TestFromHTTPSpanFinished:
     def test_event_type(self):
@@ -387,44 +425,55 @@ class TestFromHTTPSpanFinished:
         assert ev.event_id.startswith("dd-http-")
 
     def test_body_contains_url(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "http_span_finished",
-            "http_url": "https://api.openai.com/v1/chat",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "http_span_finished",
+                "http_url": "https://api.openai.com/v1/chat",
+            }
+        )
         assert "https://api.openai.com/v1/chat" in ev.body
 
     def test_body_contains_status(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "http_span_finished",
-            "http_status_code": "200",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "http_span_finished",
+                "http_status_code": "200",
+            }
+        )
         assert "200" in ev.body
 
     def test_attributes_http_url(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "http_span_finished",
-            "http_url": "https://example.com",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "http_span_finished",
+                "http_url": "https://example.com",
+            }
+        )
         assert ev.attributes["http_url"] == "https://example.com"
 
     def test_attributes_http_status_code(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "http_span_finished",
-            "http_status_code": "201",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "http_span_finished",
+                "http_status_code": "201",
+            }
+        )
         assert ev.attributes["http_status_code"] == "201"
 
     def test_attributes_http_method(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "http_span_finished",
-            "http_method": "POST",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "http_span_finished",
+                "http_method": "POST",
+            }
+        )
         assert ev.attributes["http_method"] == "POST"
 
 
 # ---------------------------------------------------------------------------
 # TestFromHTTPSpanError
 # ---------------------------------------------------------------------------
+
 
 class TestFromHTTPSpanError:
     def test_event_type(self):
@@ -440,27 +489,33 @@ class TestFromHTTPSpanError:
         assert ev.event_id.startswith("dd-http-")
 
     def test_body_contains_url(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "http_span_error",
-            "http_url": "https://api.example.com",
-            "error_message": "timeout",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "http_span_error",
+                "http_url": "https://api.example.com",
+                "error_message": "timeout",
+            }
+        )
         assert "https://api.example.com" in ev.body
 
     def test_body_contains_error_message(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "http_span_error",
-            "error_message": "connection refused",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "http_span_error",
+                "error_message": "connection refused",
+            }
+        )
         assert "connection refused" in ev.body
 
     def test_attributes_include_http_attrs(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "http_span_error",
-            "http_url": "https://example.com",
-            "http_status_code": "503",
-            "http_method": "GET",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "http_span_error",
+                "http_url": "https://example.com",
+                "http_status_code": "503",
+                "http_method": "GET",
+            }
+        )
         assert ev.attributes["http_url"] == "https://example.com"
         assert ev.attributes["http_status_code"] == "503"
         assert ev.attributes["http_method"] == "GET"
@@ -469,6 +524,7 @@ class TestFromHTTPSpanError:
 # ---------------------------------------------------------------------------
 # TestFromDBSpanFinished
 # ---------------------------------------------------------------------------
+
 
 class TestFromDBSpanFinished:
     def test_event_type(self):
@@ -484,31 +540,38 @@ class TestFromDBSpanFinished:
         assert ev.event_id.startswith("dd-db-")
 
     def test_body_contains_span_name(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "db_span_finished",
-            "span_name": "postgresql.query",
-            "component": "psycopg2",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "db_span_finished",
+                "span_name": "postgresql.query",
+                "component": "psycopg2",
+            }
+        )
         assert "postgresql.query" in ev.body
 
     def test_body_contains_component(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "db_span_finished",
-            "component": "redis",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "db_span_finished",
+                "component": "redis",
+            }
+        )
         assert "redis" in ev.body
 
     def test_attributes_component(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "db_span_finished",
-            "component": "sqlalchemy",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "db_span_finished",
+                "component": "sqlalchemy",
+            }
+        )
         assert ev.attributes["component"] == "sqlalchemy"
 
 
 # ---------------------------------------------------------------------------
 # TestFromDBSpanError
 # ---------------------------------------------------------------------------
+
 
 class TestFromDBSpanError:
     def test_event_type(self):
@@ -524,32 +587,39 @@ class TestFromDBSpanError:
         assert ev.event_id.startswith("dd-db-")
 
     def test_body_contains_error_message(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "db_span_error",
-            "span_name": "redis.get",
-            "component": "redis",
-            "error_message": "key not found",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "db_span_error",
+                "span_name": "redis.get",
+                "component": "redis",
+                "error_message": "key not found",
+            }
+        )
         assert "key not found" in ev.body
 
     def test_body_contains_component(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "db_span_error",
-            "component": "pymongo",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "db_span_error",
+                "component": "pymongo",
+            }
+        )
         assert "pymongo" in ev.body
 
     def test_attributes_error_message(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "db_span_error",
-            "error_message": "duplicate key",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "db_span_error",
+                "error_message": "duplicate key",
+            }
+        )
         assert ev.attributes["error_message"] == "duplicate key"
 
 
 # ---------------------------------------------------------------------------
 # TestFromUnknown
 # ---------------------------------------------------------------------------
+
 
 class TestFromUnknown:
     def test_event_type(self):
@@ -586,29 +656,36 @@ class TestFromUnknown:
 # TestTimestampParsing
 # ---------------------------------------------------------------------------
 
+
 class TestTimestampParsing:
     def test_iso_timestamp_parsed(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "span_finished",
-            "timestamp": "2024-03-15T09:00:00+00:00",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "span_finished",
+                "timestamp": "2024-03-15T09:00:00+00:00",
+            }
+        )
         assert ev.timestamp.year == 2024
         assert ev.timestamp.month == 3
         assert ev.timestamp.day == 15
 
     def test_z_suffix_timestamp_parsed(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "span_finished",
-            "timestamp": "2024-07-04T12:00:00Z",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "span_finished",
+                "timestamp": "2024-07-04T12:00:00Z",
+            }
+        )
         assert ev.timestamp.year == 2024
         assert ev.timestamp.month == 7
 
     def test_invalid_timestamp_falls_back_to_now(self):
-        ev = _make_adapter().to_sentinel_event({
-            "type": "span_finished",
-            "timestamp": "not-a-date",
-        })
+        ev = _make_adapter().to_sentinel_event(
+            {
+                "type": "span_finished",
+                "timestamp": "not-a-date",
+            }
+        )
         assert isinstance(ev.timestamp, datetime)
 
     def test_missing_timestamp_falls_back_to_now(self):
@@ -619,6 +696,7 @@ class TestTimestampParsing:
 # ---------------------------------------------------------------------------
 # TestDrainFlush
 # ---------------------------------------------------------------------------
+
 
 class TestDrainFlush:
     def test_drain_returns_events(self):
@@ -661,6 +739,7 @@ class TestDrainFlush:
 # TestBufferThreadSafety
 # ---------------------------------------------------------------------------
 
+
 class TestBufferThreadSafety:
     def test_concurrent_buffer_writes(self):
         adapter = _make_adapter()
@@ -669,9 +748,7 @@ class TestBufferThreadSafety:
         def worker():
             try:
                 for _ in range(50):
-                    adapter._buffer_event(
-                        adapter.to_sentinel_event({"type": "span_finished"})
-                    )
+                    adapter._buffer_event(adapter.to_sentinel_event({"type": "span_finished"}))
             except Exception as exc:
                 errors.append(exc)
 
@@ -709,6 +786,7 @@ class TestBufferThreadSafety:
 # ---------------------------------------------------------------------------
 # TestSetup
 # ---------------------------------------------------------------------------
+
 
 class TestSetup:
     def test_writer_write_is_replaced(self):
@@ -766,8 +844,9 @@ class TestSetup:
 
     def test_error_span_buffers_error_event(self):
         adapter, tracer = _setup_adapter()
-        span = _make_span(name="web.request", component="", error=1,
-                          tags={"error.message": "boom"})
+        span = _make_span(
+            name="web.request", component="", error=1, tags={"error.message": "boom"}
+        )
         _write(tracer, [span])
         events = adapter.drain()
         assert any(e.event_type == "span_error" for e in events)
@@ -830,9 +909,11 @@ class TestSetup:
 # TestSpanToRaw
 # ---------------------------------------------------------------------------
 
+
 class TestSpanToRaw:
     def _raw(self, **kwargs):
         from agentcop.adapters.datadog import _span_to_raw
+
         return _span_to_raw(_make_span(**kwargs))
 
     def test_generic_span_type(self):
@@ -895,8 +976,9 @@ class TestSpanToRaw:
 
     def test_timestamp_from_start_float(self):
         from agentcop.adapters.datadog import _span_to_raw
+
         span = _make_span(start_ns=None)  # start_ns=None triggers fallback
-        span.start = 1_700_000_000.0     # float seconds
+        span.start = 1_700_000_000.0  # float seconds
         raw = _span_to_raw(span)
         assert raw["timestamp"] is not None
         assert "2023" in raw["timestamp"]
@@ -906,13 +988,13 @@ class TestSpanToRaw:
         assert raw["model"] == "gpt-4o"
 
     def test_llm_model_from_openai_tag(self):
-        raw = self._raw(component="openai",
-                        tags={"openai.request.model": "gpt-4o-mini"})
+        raw = self._raw(component="openai", tags={"openai.request.model": "gpt-4o-mini"})
         assert raw["model"] == "gpt-4o-mini"
 
     def test_llm_model_from_langchain_tag(self):
-        raw = self._raw(component="langchain",
-                        tags={"langchain.request.llm.model_name": "gpt-3.5-turbo"})
+        raw = self._raw(
+            component="langchain", tags={"langchain.request.llm.model_name": "gpt-3.5-turbo"}
+        )
         assert raw["model"] == "gpt-3.5-turbo"
 
     def test_llm_usage_from_metrics(self):
@@ -936,13 +1018,11 @@ class TestSpanToRaw:
         assert raw["usage"]["prompt_tokens"] == 5
 
     def test_http_url_from_tag(self):
-        raw = self._raw(component="requests",
-                        tags={"http.url": "https://api.openai.com/v1"})
+        raw = self._raw(component="requests", tags={"http.url": "https://api.openai.com/v1"})
         assert raw["http_url"] == "https://api.openai.com/v1"
 
     def test_http_status_from_tag(self):
-        raw = self._raw(component="requests",
-                        tags={"http.status_code": "200"})
+        raw = self._raw(component="requests", tags={"http.status_code": "200"})
         assert raw["http_status_code"] == "200"
 
     def test_error_message_from_tag(self):
@@ -966,24 +1046,29 @@ class TestSpanToRaw:
 # TestGetTag
 # ---------------------------------------------------------------------------
 
+
 class TestGetTag:
     def test_returns_tag_value(self):
         from agentcop.adapters.datadog import _get_tag
+
         span = _make_span(tags={"foo": "bar"})
         assert _get_tag(span, "foo") == "bar"
 
     def test_returns_default_when_missing(self):
         from agentcop.adapters.datadog import _get_tag
+
         span = _make_span()
         assert _get_tag(span, "nonexistent") == ""
 
     def test_returns_default_when_none(self):
         from agentcop.adapters.datadog import _get_tag
+
         span = _make_span(tags={"key": None})
         assert _get_tag(span, "key") == ""
 
     def test_swallows_exception(self):
         from agentcop.adapters.datadog import _get_tag
+
         span = MagicMock()
         span.get_tag = MagicMock(side_effect=RuntimeError("broken"))
         assert _get_tag(span, "key") == ""
@@ -993,30 +1078,36 @@ class TestGetTag:
 # TestGetNumeric
 # ---------------------------------------------------------------------------
 
+
 class TestGetNumeric:
     def test_returns_metric_value(self):
         from agentcop.adapters.datadog import _get_numeric
+
         span = _make_span(metrics={"my.metric": 42.0})
         assert _get_numeric(span, "my.metric") == 42.0
 
     def test_falls_back_to_tag(self):
         from agentcop.adapters.datadog import _get_numeric
+
         span = _make_span(tags={"my.metric": "7"})
         assert _get_numeric(span, "my.metric") == 7.0
 
     def test_returns_none_when_all_fail(self):
         from agentcop.adapters.datadog import _get_numeric
+
         span = _make_span()
         assert _get_numeric(span, "nonexistent") is None
 
     def test_tries_keys_in_order(self):
         from agentcop.adapters.datadog import _get_numeric
+
         span = _make_span(metrics={"second": 99.0})
         # first key missing, second key present
         assert _get_numeric(span, "first", "second") == 99.0
 
     def test_swallows_exception(self):
         from agentcop.adapters.datadog import _get_numeric
+
         span = MagicMock()
         span.get_metric = MagicMock(side_effect=RuntimeError("boom"))
         span.get_tag = MagicMock(side_effect=RuntimeError("boom"))
@@ -1027,19 +1118,23 @@ class TestGetNumeric:
 # TestNsToIso
 # ---------------------------------------------------------------------------
 
+
 class TestNsToIso:
     def test_converts_nanoseconds(self):
         from agentcop.adapters.datadog import _ns_to_iso
+
         iso = _ns_to_iso(1_700_000_000_000_000_000)
         assert iso is not None
         assert "2023" in iso
 
     def test_zero_returns_none(self):
         from agentcop.adapters.datadog import _ns_to_iso
+
         assert _ns_to_iso(0) is None
 
     def test_none_returns_none(self):
         from agentcop.adapters.datadog import _ns_to_iso
+
         assert _ns_to_iso(None) is None
 
 
@@ -1047,9 +1142,11 @@ class TestNsToIso:
 # TestProtocolConformance
 # ---------------------------------------------------------------------------
 
+
 class TestProtocolConformance:
     def test_is_sentinel_adapter(self):
         from agentcop.adapters.base import SentinelAdapter
+
         assert isinstance(_make_adapter(), SentinelAdapter)
 
     def test_has_source_system_str(self):
@@ -1067,6 +1164,7 @@ class TestProtocolConformance:
 # ---------------------------------------------------------------------------
 # TestSentinelIntegration
 # ---------------------------------------------------------------------------
+
 
 class TestSentinelIntegration:
     def test_flush_into_ingests_all_events(self):

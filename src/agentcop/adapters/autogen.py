@@ -53,8 +53,9 @@ from __future__ import annotations
 
 import threading
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, Iterator, List, Optional
+from collections.abc import Iterable, Iterator
+from datetime import UTC, datetime
+from typing import Any
 
 from agentcop.event import SentinelEvent
 
@@ -107,13 +108,13 @@ class AutoGenSentinelAdapter:
 
     source_system = "autogen"
 
-    def __init__(self, run_id: Optional[str] = None) -> None:
+    def __init__(self, run_id: str | None = None) -> None:
         _require_autogen()
         self._run_id = run_id
-        self._buffer: List[SentinelEvent] = []
+        self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
 
-    def to_sentinel_event(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def to_sentinel_event(self, raw: dict[str, Any]) -> SentinelEvent:
         """
         Translate one AutoGen event dict into a SentinelEvent.
 
@@ -122,24 +123,22 @@ class AutoGenSentinelAdapter:
         ``unknown_autogen_event`` with severity INFO.
         """
         dispatch = {
-            "conversation_started":    self._from_conversation_started,
-            "conversation_completed":  self._from_conversation_completed,
-            "conversation_error":      self._from_conversation_error,
-            "message_sent":            self._from_message_sent,
-            "message_filtered":        self._from_message_filtered,
-            "function_call_started":   self._from_function_call_started,
+            "conversation_started": self._from_conversation_started,
+            "conversation_completed": self._from_conversation_completed,
+            "conversation_error": self._from_conversation_error,
+            "message_sent": self._from_message_sent,
+            "message_filtered": self._from_message_filtered,
+            "function_call_started": self._from_function_call_started,
             "function_call_completed": self._from_function_call_completed,
-            "function_call_error":     self._from_function_call_error,
-            "agent_reply_started":     self._from_agent_reply_started,
-            "agent_reply_completed":   self._from_agent_reply_completed,
-            "agent_reply_error":       self._from_agent_reply_error,
+            "function_call_error": self._from_function_call_error,
+            "agent_reply_started": self._from_agent_reply_started,
+            "agent_reply_completed": self._from_agent_reply_completed,
+            "agent_reply_error": self._from_agent_reply_error,
         }
         handler = dispatch.get(raw.get("type", ""), self._from_unknown)
         return handler(raw)
 
-    def iter_messages(
-        self, messages: Iterable[Dict[str, Any]]
-    ) -> Iterator[SentinelEvent]:
+    def iter_messages(self, messages: Iterable[dict[str, Any]]) -> Iterator[SentinelEvent]:
         """
         Translate an AutoGen chat history into a sequence of SentinelEvents.
 
@@ -167,7 +166,7 @@ class AutoGenSentinelAdapter:
         for msg in messages:
             yield self._translate_native_message(msg)
 
-    def drain(self) -> List[SentinelEvent]:
+    def drain(self) -> list[SentinelEvent]:
         """Return all buffered SentinelEvents and clear the buffer."""
         with self._lock:
             events = list(self._buffer)
@@ -191,16 +190,18 @@ class AutoGenSentinelAdapter:
     # ------------------------------------------------------------------
 
     # AutoGen 0.4.x type strings that trigger v4 translation
-    _V4_TYPES = frozenset({
-        "TextMessage",
-        "ToolCallRequestEvent",
-        "ToolCallExecutionEvent",
-        "ToolCallSummaryMessage",
-        "StopMessage",
-        "HandoffMessage",
-    })
+    _V4_TYPES = frozenset(
+        {
+            "TextMessage",
+            "ToolCallRequestEvent",
+            "ToolCallExecutionEvent",
+            "ToolCallSummaryMessage",
+            "StopMessage",
+            "HandoffMessage",
+        }
+    )
 
-    def _translate_native_message(self, msg: Dict[str, Any]) -> SentinelEvent:
+    def _translate_native_message(self, msg: dict[str, Any]) -> SentinelEvent:
         """
         Detect native AutoGen message format and route to the correct
         translator.
@@ -218,7 +219,7 @@ class AutoGenSentinelAdapter:
             return self._translate_v2_message(msg)
         return self.to_sentinel_event(msg)
 
-    def _translate_v2_message(self, msg: Dict[str, Any]) -> SentinelEvent:
+    def _translate_v2_message(self, msg: dict[str, Any]) -> SentinelEvent:
         """Translate an AutoGen 0.2.x native message dict."""
         role = msg.get("role", "unknown")
         name = msg.get("name") or role
@@ -229,152 +230,178 @@ class AutoGenSentinelAdapter:
             content = str(msg.get("content", ""))
             func_name = msg.get("name", "unknown")
             if _looks_like_error(content):
-                return self.to_sentinel_event({
-                    "type": "function_call_error",
+                return self.to_sentinel_event(
+                    {
+                        "type": "function_call_error",
+                        "function_name": func_name,
+                        "error": content[:500],
+                        "sender": "unknown",
+                        "timestamp": timestamp,
+                    }
+                )
+            return self.to_sentinel_event(
+                {
+                    "type": "function_call_completed",
                     "function_name": func_name,
-                    "error": content[:500],
-                    "sender": "unknown",
+                    "result": content[:500],
                     "timestamp": timestamp,
-                })
-            return self.to_sentinel_event({
-                "type": "function_call_completed",
-                "function_name": func_name,
-                "result": content[:500],
-                "timestamp": timestamp,
-            })
+                }
+            )
 
         # role=tool: OpenAI-style tool result
         if role == "tool":
             content = str(msg.get("content", ""))
-            return self.to_sentinel_event({
-                "type": "function_call_completed",
-                "function_name": msg.get("name", "unknown"),
-                "tool_call_id": msg.get("tool_call_id", ""),
-                "result": content[:500],
-                "timestamp": timestamp,
-            })
+            return self.to_sentinel_event(
+                {
+                    "type": "function_call_completed",
+                    "function_name": msg.get("name", "unknown"),
+                    "tool_call_id": msg.get("tool_call_id", ""),
+                    "result": content[:500],
+                    "timestamp": timestamp,
+                }
+            )
 
         # Function call request (legacy function_call dict)
         if msg.get("function_call"):
             fc = msg["function_call"]
-            return self.to_sentinel_event({
-                "type": "function_call_started",
-                "sender": name,
-                "function_name": fc.get("name", "unknown"),
-                "arguments": fc.get("arguments", ""),
-                "timestamp": timestamp,
-            })
+            return self.to_sentinel_event(
+                {
+                    "type": "function_call_started",
+                    "sender": name,
+                    "function_name": fc.get("name", "unknown"),
+                    "arguments": fc.get("arguments", ""),
+                    "timestamp": timestamp,
+                }
+            )
 
         # Tool call request (OpenAI tool_calls list)
         if msg.get("tool_calls"):
             first = msg["tool_calls"][0]
             func = first.get("function", {})
-            return self.to_sentinel_event({
-                "type": "function_call_started",
-                "sender": name,
-                "function_name": func.get("name", "unknown"),
-                "arguments": func.get("arguments", ""),
-                "tool_call_id": first.get("id", ""),
-                "timestamp": timestamp,
-            })
+            return self.to_sentinel_event(
+                {
+                    "type": "function_call_started",
+                    "sender": name,
+                    "function_name": func.get("name", "unknown"),
+                    "arguments": func.get("arguments", ""),
+                    "tool_call_id": first.get("id", ""),
+                    "timestamp": timestamp,
+                }
+            )
 
         # Regular text message
         content = msg.get("content") or ""
-        return self.to_sentinel_event({
-            "type": "message_sent",
-            "sender": name,
-            "role": role,
-            "content": str(content)[:500],
-            "timestamp": timestamp,
-        })
+        return self.to_sentinel_event(
+            {
+                "type": "message_sent",
+                "sender": name,
+                "role": role,
+                "content": str(content)[:500],
+                "timestamp": timestamp,
+            }
+        )
 
-    def _translate_v4_message(self, msg: Dict[str, Any]) -> SentinelEvent:
+    def _translate_v4_message(self, msg: dict[str, Any]) -> SentinelEvent:
         """Translate an AutoGen 0.4.x (autogen-agentchat) native message dict."""
         msg_type = msg.get("type", "")
         source = msg.get("source", "unknown")
         timestamp = msg.get("created_at") or msg.get("timestamp")
 
         if msg_type == "TextMessage":
-            return self.to_sentinel_event({
-                "type": "message_sent",
-                "sender": source,
-                "content": str(msg.get("content", ""))[:500],
-                "timestamp": timestamp,
-            })
+            return self.to_sentinel_event(
+                {
+                    "type": "message_sent",
+                    "sender": source,
+                    "content": str(msg.get("content", ""))[:500],
+                    "timestamp": timestamp,
+                }
+            )
 
         if msg_type == "ToolCallRequestEvent":
             calls = msg.get("content") or []
             first = calls[0] if calls else {}
-            return self.to_sentinel_event({
-                "type": "function_call_started",
-                "sender": source,
-                "function_name": first.get("name", "unknown"),
-                "arguments": first.get("arguments", ""),
-                "tool_call_id": first.get("id", ""),
-                "timestamp": timestamp,
-            })
+            return self.to_sentinel_event(
+                {
+                    "type": "function_call_started",
+                    "sender": source,
+                    "function_name": first.get("name", "unknown"),
+                    "arguments": first.get("arguments", ""),
+                    "tool_call_id": first.get("id", ""),
+                    "timestamp": timestamp,
+                }
+            )
 
         if msg_type == "ToolCallExecutionEvent":
             results = msg.get("content") or []
             first = results[0] if results else {}
             content = str(first.get("content", ""))
             if _looks_like_error(content):
-                return self.to_sentinel_event({
-                    "type": "function_call_error",
+                return self.to_sentinel_event(
+                    {
+                        "type": "function_call_error",
+                        "function_name": "unknown",
+                        "tool_call_id": first.get("call_id", ""),
+                        "error": content[:500],
+                        "sender": source,
+                        "timestamp": timestamp,
+                    }
+                )
+            return self.to_sentinel_event(
+                {
+                    "type": "function_call_completed",
                     "function_name": "unknown",
                     "tool_call_id": first.get("call_id", ""),
-                    "error": content[:500],
-                    "sender": source,
+                    "result": content[:500],
                     "timestamp": timestamp,
-                })
-            return self.to_sentinel_event({
-                "type": "function_call_completed",
-                "function_name": "unknown",
-                "tool_call_id": first.get("call_id", ""),
-                "result": content[:500],
-                "timestamp": timestamp,
-            })
+                }
+            )
 
         if msg_type in ("StopMessage", "ToolCallSummaryMessage"):
-            return self.to_sentinel_event({
-                "type": "conversation_completed",
-                "content": str(msg.get("content", ""))[:500],
-                "initiator": source,
-                "timestamp": timestamp,
-            })
+            return self.to_sentinel_event(
+                {
+                    "type": "conversation_completed",
+                    "content": str(msg.get("content", ""))[:500],
+                    "initiator": source,
+                    "timestamp": timestamp,
+                }
+            )
 
         if msg_type == "HandoffMessage":
-            return self.to_sentinel_event({
-                "type": "message_sent",
-                "sender": source,
-                "content": f"[handoff] {str(msg.get('content', ''))[:400]}",
-                "timestamp": timestamp,
-            })
+            return self.to_sentinel_event(
+                {
+                    "type": "message_sent",
+                    "sender": source,
+                    "content": f"[handoff] {str(msg.get('content', ''))[:400]}",
+                    "timestamp": timestamp,
+                }
+            )
 
         # Unknown 0.4.x type — original_type will be msg_type via _from_unknown
-        return self.to_sentinel_event({
-            "type": msg_type,
-            "timestamp": timestamp,
-        })
+        return self.to_sentinel_event(
+            {
+                "type": msg_type,
+                "timestamp": timestamp,
+            }
+        )
 
     # ------------------------------------------------------------------
     # Timestamp helper
     # ------------------------------------------------------------------
 
-    def _parse_timestamp(self, raw: Dict[str, Any]) -> datetime:
+    def _parse_timestamp(self, raw: dict[str, Any]) -> datetime:
         ts = raw.get("timestamp")
         if ts:
             try:
                 return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
             except ValueError:
                 pass
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     # ------------------------------------------------------------------
     # Private translators
     # ------------------------------------------------------------------
 
-    def _from_conversation_started(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_conversation_started(self, raw: dict[str, Any]) -> SentinelEvent:
         initiator = raw.get("initiator", "unknown")
         recipient = raw.get("recipient", "unknown")
         return SentinelEvent(
@@ -388,11 +415,11 @@ class AutoGenSentinelAdapter:
             attributes={"initiator": initiator, "recipient": recipient},
         )
 
-    def _from_conversation_completed(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_conversation_completed(self, raw: dict[str, Any]) -> SentinelEvent:
         initiator = raw.get("initiator", "unknown")
         message_count = raw.get("message_count", 0)
         content = raw.get("content", "")
-        attrs: Dict[str, Any] = {
+        attrs: dict[str, Any] = {
             "initiator": initiator,
             "message_count": message_count,
         }
@@ -409,7 +436,7 @@ class AutoGenSentinelAdapter:
             attributes=attrs,
         )
 
-    def _from_conversation_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_conversation_error(self, raw: dict[str, Any]) -> SentinelEvent:
         initiator = raw.get("initiator", "unknown")
         error = raw.get("error", "")
         return SentinelEvent(
@@ -423,11 +450,11 @@ class AutoGenSentinelAdapter:
             attributes={"initiator": initiator, "error": error},
         )
 
-    def _from_message_sent(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_message_sent(self, raw: dict[str, Any]) -> SentinelEvent:
         sender = raw.get("sender", "unknown")
         content = raw.get("content", "")
         role = raw.get("role", "")
-        attrs: Dict[str, Any] = {"sender": sender, "content": content}
+        attrs: dict[str, Any] = {"sender": sender, "content": content}
         if role:
             attrs["role"] = role
         return SentinelEvent(
@@ -441,7 +468,7 @@ class AutoGenSentinelAdapter:
             attributes=attrs,
         )
 
-    def _from_message_filtered(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_message_filtered(self, raw: dict[str, Any]) -> SentinelEvent:
         sender = raw.get("sender", "unknown")
         reason = raw.get("reason", "")
         content = raw.get("content", "")
@@ -456,12 +483,12 @@ class AutoGenSentinelAdapter:
             attributes={"sender": sender, "reason": reason, "content": content},
         )
 
-    def _from_function_call_started(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_function_call_started(self, raw: dict[str, Any]) -> SentinelEvent:
         sender = raw.get("sender", "unknown")
         function_name = raw.get("function_name", "unknown")
         arguments = raw.get("arguments", "")
         tool_call_id = raw.get("tool_call_id", "")
-        attrs: Dict[str, Any] = {
+        attrs: dict[str, Any] = {
             "sender": sender,
             "function_name": function_name,
             "arguments": arguments,
@@ -479,11 +506,11 @@ class AutoGenSentinelAdapter:
             attributes=attrs,
         )
 
-    def _from_function_call_completed(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_function_call_completed(self, raw: dict[str, Any]) -> SentinelEvent:
         function_name = raw.get("function_name", "unknown")
         result = raw.get("result", "")
         tool_call_id = raw.get("tool_call_id", "")
-        attrs: Dict[str, Any] = {"function_name": function_name, "result": result}
+        attrs: dict[str, Any] = {"function_name": function_name, "result": result}
         if tool_call_id:
             attrs["tool_call_id"] = tool_call_id
         return SentinelEvent(
@@ -497,7 +524,7 @@ class AutoGenSentinelAdapter:
             attributes=attrs,
         )
 
-    def _from_function_call_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_function_call_error(self, raw: dict[str, Any]) -> SentinelEvent:
         sender = raw.get("sender", "unknown")
         function_name = raw.get("function_name", "unknown")
         error = raw.get("error", "")
@@ -512,7 +539,7 @@ class AutoGenSentinelAdapter:
             attributes={"sender": sender, "function_name": function_name, "error": error},
         )
 
-    def _from_agent_reply_started(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_agent_reply_started(self, raw: dict[str, Any]) -> SentinelEvent:
         agent = raw.get("agent", "unknown")
         return SentinelEvent(
             event_id=f"autogen-agent-{uuid.uuid4()}",
@@ -525,7 +552,7 @@ class AutoGenSentinelAdapter:
             attributes={"agent": agent},
         )
 
-    def _from_agent_reply_completed(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_agent_reply_completed(self, raw: dict[str, Any]) -> SentinelEvent:
         agent = raw.get("agent", "unknown")
         content = raw.get("content", "")
         return SentinelEvent(
@@ -539,7 +566,7 @@ class AutoGenSentinelAdapter:
             attributes={"agent": agent, "content": content},
         )
 
-    def _from_agent_reply_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_agent_reply_error(self, raw: dict[str, Any]) -> SentinelEvent:
         agent = raw.get("agent", "unknown")
         error = raw.get("error", "")
         return SentinelEvent(
@@ -553,7 +580,7 @@ class AutoGenSentinelAdapter:
             attributes={"agent": agent, "error": error},
         )
 
-    def _from_unknown(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_unknown(self, raw: dict[str, Any]) -> SentinelEvent:
         original_type = raw.get("type", "unknown")
         return SentinelEvent(
             event_id=f"autogen-unknown-{uuid.uuid4()}",

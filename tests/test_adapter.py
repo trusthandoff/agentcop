@@ -1,7 +1,5 @@
 """Tests for the SentinelAdapter protocol."""
 
-import pytest
-
 from agentcop import SentinelAdapter, SentinelEvent
 
 

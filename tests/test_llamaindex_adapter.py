@@ -1,22 +1,23 @@
 """Tests for LlamaIndexSentinelAdapter. No llama-index install required."""
 
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentcop import Sentinel, SentinelEvent
-
+from agentcop import Sentinel
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_adapter(run_id=None):
     """Construct a LlamaIndexSentinelAdapter with the guard bypassed."""
     with patch("agentcop.adapters.llamaindex._require_llamaindex"):
         from agentcop.adapters.llamaindex import LlamaIndexSentinelAdapter
+
         return LlamaIndexSentinelAdapter(run_id=run_id)
 
 
@@ -34,9 +35,11 @@ def adapter_no_run():
 # Guard / import
 # ---------------------------------------------------------------------------
 
+
 class TestRequireLlamaIndex:
     def test_raises_import_error_when_llamaindex_missing(self):
         import builtins
+
         real_import = builtins.__import__
 
         def mock_import(name, *args, **kwargs):
@@ -46,11 +49,13 @@ class TestRequireLlamaIndex:
 
         with patch("builtins.__import__", side_effect=mock_import):
             from agentcop.adapters.llamaindex import _require_llamaindex
+
             with pytest.raises(ImportError, match="pip install agentcop\\[llamaindex\\]"):
                 _require_llamaindex()
 
     def test_does_not_raise_when_llamaindex_present(self):
         import builtins
+
         real_import = builtins.__import__
 
         def mock_import(name, *args, **kwargs):
@@ -60,11 +65,13 @@ class TestRequireLlamaIndex:
 
         with patch("builtins.__import__", side_effect=mock_import):
             from agentcop.adapters.llamaindex import _require_llamaindex
+
             _require_llamaindex()
 
     def test_constructor_calls_require_llamaindex(self):
         with patch("agentcop.adapters.llamaindex._require_llamaindex") as mock_guard:
             from agentcop.adapters.llamaindex import LlamaIndexSentinelAdapter
+
             LlamaIndexSentinelAdapter()
             mock_guard.assert_called_once()
 
@@ -72,6 +79,7 @@ class TestRequireLlamaIndex:
 # ---------------------------------------------------------------------------
 # Adapter init
 # ---------------------------------------------------------------------------
+
 
 class TestAdapterInit:
     def test_source_system_is_llamaindex(self, adapter):
@@ -91,6 +99,7 @@ class TestAdapterInit:
 # ---------------------------------------------------------------------------
 # Query events
 # ---------------------------------------------------------------------------
+
 
 class TestFromQueryEvents:
     def test_query_started_event_type(self, adapter):
@@ -126,32 +135,46 @@ class TestFromQueryEvents:
         assert e.attributes["query_str"] == ""
 
     def test_query_finished_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "query_finished", "query_str": "q", "response": "answer"})
+        e = adapter.to_sentinel_event(
+            {"type": "query_finished", "query_str": "q", "response": "answer"}
+        )
         assert e.event_type == "query_finished"
 
     def test_query_finished_severity_info(self, adapter):
-        e = adapter.to_sentinel_event({"type": "query_finished", "query_str": "q", "response": "r"})
+        e = adapter.to_sentinel_event(
+            {"type": "query_finished", "query_str": "q", "response": "r"}
+        )
         assert e.severity == "INFO"
 
     def test_query_finished_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "query_finished", "query_str": "What is RAG?", "response": "RAG is..."})
+        e = adapter.to_sentinel_event(
+            {"type": "query_finished", "query_str": "What is RAG?", "response": "RAG is..."}
+        )
         assert e.attributes["query_str"] == "What is RAG?"
         assert e.attributes["response"] == "RAG is..."
 
     def test_query_error_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "query_error", "query_str": "q", "error": "timeout"})
+        e = adapter.to_sentinel_event(
+            {"type": "query_error", "query_str": "q", "error": "timeout"}
+        )
         assert e.event_type == "query_error"
 
     def test_query_error_severity_error(self, adapter):
-        e = adapter.to_sentinel_event({"type": "query_error", "query_str": "q", "error": "timeout"})
+        e = adapter.to_sentinel_event(
+            {"type": "query_error", "query_str": "q", "error": "timeout"}
+        )
         assert e.severity == "ERROR"
 
     def test_query_error_body_contains_error(self, adapter):
-        e = adapter.to_sentinel_event({"type": "query_error", "query_str": "q", "error": "index not found"})
+        e = adapter.to_sentinel_event(
+            {"type": "query_error", "query_str": "q", "error": "index not found"}
+        )
         assert "index not found" in e.body
 
     def test_query_error_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "query_error", "query_str": "q", "error": "timeout"})
+        e = adapter.to_sentinel_event(
+            {"type": "query_error", "query_str": "q", "error": "timeout"}
+        )
         assert e.attributes["query_str"] == "q"
         assert e.attributes["error"] == "timeout"
 
@@ -159,6 +182,7 @@ class TestFromQueryEvents:
 # ---------------------------------------------------------------------------
 # Retrieval events
 # ---------------------------------------------------------------------------
+
 
 class TestFromRetrievalEvents:
     def test_retrieval_started_event_type(self, adapter):
@@ -178,40 +202,58 @@ class TestFromRetrievalEvents:
         assert e.event_id.startswith("llamaindex-retrieval-")
 
     def test_retrieval_finished_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "retrieval_finished", "query_str": "q", "num_nodes": 5})
+        e = adapter.to_sentinel_event(
+            {"type": "retrieval_finished", "query_str": "q", "num_nodes": 5}
+        )
         assert e.event_type == "retrieval_finished"
 
     def test_retrieval_finished_severity_info(self, adapter):
-        e = adapter.to_sentinel_event({"type": "retrieval_finished", "query_str": "q", "num_nodes": 3})
+        e = adapter.to_sentinel_event(
+            {"type": "retrieval_finished", "query_str": "q", "num_nodes": 3}
+        )
         assert e.severity == "INFO"
 
     def test_retrieval_finished_body_contains_node_count(self, adapter):
-        e = adapter.to_sentinel_event({"type": "retrieval_finished", "query_str": "q", "num_nodes": 7})
+        e = adapter.to_sentinel_event(
+            {"type": "retrieval_finished", "query_str": "q", "num_nodes": 7}
+        )
         assert "7" in e.body
 
     def test_retrieval_finished_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "retrieval_finished", "query_str": "q", "num_nodes": 4})
+        e = adapter.to_sentinel_event(
+            {"type": "retrieval_finished", "query_str": "q", "num_nodes": 4}
+        )
         assert e.attributes["num_nodes"] == 4
         assert e.attributes["query_str"] == "q"
 
     def test_retrieval_finished_zero_nodes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "retrieval_finished", "query_str": "q", "num_nodes": 0})
+        e = adapter.to_sentinel_event(
+            {"type": "retrieval_finished", "query_str": "q", "num_nodes": 0}
+        )
         assert e.attributes["num_nodes"] == 0
 
     def test_retrieval_error_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "retrieval_error", "query_str": "q", "error": "vectordb down"})
+        e = adapter.to_sentinel_event(
+            {"type": "retrieval_error", "query_str": "q", "error": "vectordb down"}
+        )
         assert e.event_type == "retrieval_error"
 
     def test_retrieval_error_severity_error(self, adapter):
-        e = adapter.to_sentinel_event({"type": "retrieval_error", "query_str": "q", "error": "down"})
+        e = adapter.to_sentinel_event(
+            {"type": "retrieval_error", "query_str": "q", "error": "down"}
+        )
         assert e.severity == "ERROR"
 
     def test_retrieval_error_body_contains_error(self, adapter):
-        e = adapter.to_sentinel_event({"type": "retrieval_error", "query_str": "q", "error": "connection refused"})
+        e = adapter.to_sentinel_event(
+            {"type": "retrieval_error", "query_str": "q", "error": "connection refused"}
+        )
         assert "connection refused" in e.body
 
     def test_retrieval_error_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "retrieval_error", "query_str": "q", "error": "timeout"})
+        e = adapter.to_sentinel_event(
+            {"type": "retrieval_error", "query_str": "q", "error": "timeout"}
+        )
         assert e.attributes["query_str"] == "q"
         assert e.attributes["error"] == "timeout"
 
@@ -219,6 +261,7 @@ class TestFromRetrievalEvents:
 # ---------------------------------------------------------------------------
 # LLM events
 # ---------------------------------------------------------------------------
+
 
 class TestFromLLMEvents:
     def test_llm_predict_started_event_type(self, adapter):
@@ -238,7 +281,9 @@ class TestFromLLMEvents:
         assert e.attributes["model_name"] == "gpt-4o"
 
     def test_llm_predict_started_query_str_included_when_present(self, adapter):
-        e = adapter.to_sentinel_event({"type": "llm_predict_started", "model_name": "gpt-4o", "query_str": "prompt"})
+        e = adapter.to_sentinel_event(
+            {"type": "llm_predict_started", "model_name": "gpt-4o", "query_str": "prompt"}
+        )
         assert e.attributes["query_str"] == "prompt"
 
     def test_llm_predict_started_query_str_absent_when_empty(self, adapter):
@@ -250,33 +295,47 @@ class TestFromLLMEvents:
         assert e.event_id.startswith("llamaindex-llm-")
 
     def test_llm_predict_finished_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "llm_predict_finished", "model_name": "gpt-4o", "response": "result"})
+        e = adapter.to_sentinel_event(
+            {"type": "llm_predict_finished", "model_name": "gpt-4o", "response": "result"}
+        )
         assert e.event_type == "llm_predict_finished"
 
     def test_llm_predict_finished_severity_info(self, adapter):
-        e = adapter.to_sentinel_event({"type": "llm_predict_finished", "model_name": "gpt-4o", "response": "r"})
+        e = adapter.to_sentinel_event(
+            {"type": "llm_predict_finished", "model_name": "gpt-4o", "response": "r"}
+        )
         assert e.severity == "INFO"
 
     def test_llm_predict_finished_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "llm_predict_finished", "model_name": "gpt-4o", "response": "42"})
+        e = adapter.to_sentinel_event(
+            {"type": "llm_predict_finished", "model_name": "gpt-4o", "response": "42"}
+        )
         assert e.attributes["model_name"] == "gpt-4o"
         assert e.attributes["response"] == "42"
 
     def test_llm_predict_error_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "llm_predict_error", "model_name": "gpt-4o", "error": "rate limit"})
+        e = adapter.to_sentinel_event(
+            {"type": "llm_predict_error", "model_name": "gpt-4o", "error": "rate limit"}
+        )
         assert e.event_type == "llm_predict_error"
 
     def test_llm_predict_error_severity_error(self, adapter):
-        e = adapter.to_sentinel_event({"type": "llm_predict_error", "model_name": "gpt-4o", "error": "429"})
+        e = adapter.to_sentinel_event(
+            {"type": "llm_predict_error", "model_name": "gpt-4o", "error": "429"}
+        )
         assert e.severity == "ERROR"
 
     def test_llm_predict_error_body_contains_model_and_error(self, adapter):
-        e = adapter.to_sentinel_event({"type": "llm_predict_error", "model_name": "gpt-4o", "error": "rate limit exceeded"})
+        e = adapter.to_sentinel_event(
+            {"type": "llm_predict_error", "model_name": "gpt-4o", "error": "rate limit exceeded"}
+        )
         assert "gpt-4o" in e.body
         assert "rate limit exceeded" in e.body
 
     def test_llm_predict_error_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "llm_predict_error", "model_name": "gpt-4o", "error": "timeout"})
+        e = adapter.to_sentinel_event(
+            {"type": "llm_predict_error", "model_name": "gpt-4o", "error": "timeout"}
+        )
         assert e.attributes["model_name"] == "gpt-4o"
         assert e.attributes["error"] == "timeout"
 
@@ -297,72 +356,133 @@ class TestFromLLMEvents:
 # Agent events
 # ---------------------------------------------------------------------------
 
+
 class TestFromAgentEvents:
     def test_agent_step_started_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_step_started", "task_id": "t1", "step_num": 1, "input": "plan"})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_step_started", "task_id": "t1", "step_num": 1, "input": "plan"}
+        )
         assert e.event_type == "agent_step_started"
 
     def test_agent_step_started_severity_info(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_step_started", "task_id": "t1", "step_num": 0, "input": ""})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_step_started", "task_id": "t1", "step_num": 0, "input": ""}
+        )
         assert e.severity == "INFO"
 
     def test_agent_step_started_body_contains_step_and_task(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_step_started", "task_id": "task-99", "step_num": 3, "input": ""})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_step_started", "task_id": "task-99", "step_num": 3, "input": ""}
+        )
         assert "3" in e.body
         assert "task-99" in e.body
 
     def test_agent_step_started_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_step_started", "task_id": "t1", "step_num": 2, "input": "do X"})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_step_started", "task_id": "t1", "step_num": 2, "input": "do X"}
+        )
         assert e.attributes["task_id"] == "t1"
         assert e.attributes["step_num"] == 2
         assert e.attributes["input"] == "do X"
 
     def test_agent_step_started_event_id_prefixed(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_step_started", "task_id": "t", "step_num": 0, "input": ""})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_step_started", "task_id": "t", "step_num": 0, "input": ""}
+        )
         assert e.event_id.startswith("llamaindex-agent-")
 
     def test_agent_step_finished_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_step_finished", "task_id": "t1", "step_num": 1, "output": "done", "is_last": False})
+        e = adapter.to_sentinel_event(
+            {
+                "type": "agent_step_finished",
+                "task_id": "t1",
+                "step_num": 1,
+                "output": "done",
+                "is_last": False,
+            }
+        )
         assert e.event_type == "agent_step_finished"
 
     def test_agent_step_finished_severity_info(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_step_finished", "task_id": "t", "step_num": 0, "output": "", "is_last": True})
+        e = adapter.to_sentinel_event(
+            {
+                "type": "agent_step_finished",
+                "task_id": "t",
+                "step_num": 0,
+                "output": "",
+                "is_last": True,
+            }
+        )
         assert e.severity == "INFO"
 
     def test_agent_step_finished_body_contains_is_last(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_step_finished", "task_id": "t", "step_num": 1, "output": "", "is_last": True})
+        e = adapter.to_sentinel_event(
+            {
+                "type": "agent_step_finished",
+                "task_id": "t",
+                "step_num": 1,
+                "output": "",
+                "is_last": True,
+            }
+        )
         assert "True" in e.body
 
     def test_agent_step_finished_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_step_finished", "task_id": "t1", "step_num": 2, "output": "result", "is_last": True})
+        e = adapter.to_sentinel_event(
+            {
+                "type": "agent_step_finished",
+                "task_id": "t1",
+                "step_num": 2,
+                "output": "result",
+                "is_last": True,
+            }
+        )
         assert e.attributes["task_id"] == "t1"
         assert e.attributes["step_num"] == 2
         assert e.attributes["output"] == "result"
         assert e.attributes["is_last"] is True
 
     def test_agent_step_finished_is_last_false(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_step_finished", "task_id": "t", "step_num": 0, "output": "", "is_last": False})
+        e = adapter.to_sentinel_event(
+            {
+                "type": "agent_step_finished",
+                "task_id": "t",
+                "step_num": 0,
+                "output": "",
+                "is_last": False,
+            }
+        )
         assert e.attributes["is_last"] is False
 
     def test_agent_tool_call_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_tool_call", "tool_name": "web_search", "tool_input": '{"q":"test"}'})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_tool_call", "tool_name": "web_search", "tool_input": '{"q":"test"}'}
+        )
         assert e.event_type == "agent_tool_call"
 
     def test_agent_tool_call_severity_info(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_tool_call", "tool_name": "fn", "tool_input": ""})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_tool_call", "tool_name": "fn", "tool_input": ""}
+        )
         assert e.severity == "INFO"
 
     def test_agent_tool_call_body_contains_tool_name(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_tool_call", "tool_name": "calculator", "tool_input": ""})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_tool_call", "tool_name": "calculator", "tool_input": ""}
+        )
         assert "calculator" in e.body
 
     def test_agent_tool_call_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_tool_call", "tool_name": "web_search", "tool_input": '{"q":"AI"}'})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_tool_call", "tool_name": "web_search", "tool_input": '{"q":"AI"}'}
+        )
         assert e.attributes["tool_name"] == "web_search"
         assert e.attributes["tool_input"] == '{"q":"AI"}'
 
     def test_agent_tool_call_event_id_prefixed(self, adapter):
-        e = adapter.to_sentinel_event({"type": "agent_tool_call", "tool_name": "fn", "tool_input": ""})
+        e = adapter.to_sentinel_event(
+            {"type": "agent_tool_call", "tool_name": "fn", "tool_input": ""}
+        )
         assert e.event_id.startswith("llamaindex-agent-")
 
     def test_agent_tool_call_defaults_unknown_tool(self, adapter):
@@ -374,55 +494,77 @@ class TestFromAgentEvents:
 # Embedding events
 # ---------------------------------------------------------------------------
 
+
 class TestFromEmbeddingEvents:
     def test_embedding_started_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "embedding_started", "model_name": "text-embedding-3-small", "num_chunks": 10})
+        e = adapter.to_sentinel_event(
+            {"type": "embedding_started", "model_name": "text-embedding-3-small", "num_chunks": 10}
+        )
         assert e.event_type == "embedding_started"
 
     def test_embedding_started_severity_info(self, adapter):
-        e = adapter.to_sentinel_event({"type": "embedding_started", "model_name": "m", "num_chunks": 0})
+        e = adapter.to_sentinel_event(
+            {"type": "embedding_started", "model_name": "m", "num_chunks": 0}
+        )
         assert e.severity == "INFO"
 
     def test_embedding_started_body_contains_model_and_chunks(self, adapter):
-        e = adapter.to_sentinel_event({"type": "embedding_started", "model_name": "ada-002", "num_chunks": 5})
+        e = adapter.to_sentinel_event(
+            {"type": "embedding_started", "model_name": "ada-002", "num_chunks": 5}
+        )
         assert "ada-002" in e.body
         assert "5" in e.body
 
     def test_embedding_started_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "embedding_started", "model_name": "ada-002", "num_chunks": 8})
+        e = adapter.to_sentinel_event(
+            {"type": "embedding_started", "model_name": "ada-002", "num_chunks": 8}
+        )
         assert e.attributes["model_name"] == "ada-002"
         assert e.attributes["num_chunks"] == 8
 
     def test_embedding_started_event_id_prefixed(self, adapter):
-        e = adapter.to_sentinel_event({"type": "embedding_started", "model_name": "m", "num_chunks": 0})
+        e = adapter.to_sentinel_event(
+            {"type": "embedding_started", "model_name": "m", "num_chunks": 0}
+        )
         assert e.event_id.startswith("llamaindex-embed-")
 
     def test_embedding_finished_event_type(self, adapter):
-        e = adapter.to_sentinel_event({"type": "embedding_finished", "model_name": "ada-002", "num_chunks": 5})
+        e = adapter.to_sentinel_event(
+            {"type": "embedding_finished", "model_name": "ada-002", "num_chunks": 5}
+        )
         assert e.event_type == "embedding_finished"
 
     def test_embedding_finished_severity_info(self, adapter):
-        e = adapter.to_sentinel_event({"type": "embedding_finished", "model_name": "m", "num_chunks": 0})
+        e = adapter.to_sentinel_event(
+            {"type": "embedding_finished", "model_name": "m", "num_chunks": 0}
+        )
         assert e.severity == "INFO"
 
     def test_embedding_finished_body_contains_model_and_chunks(self, adapter):
-        e = adapter.to_sentinel_event({"type": "embedding_finished", "model_name": "ada-002", "num_chunks": 12})
+        e = adapter.to_sentinel_event(
+            {"type": "embedding_finished", "model_name": "ada-002", "num_chunks": 12}
+        )
         assert "ada-002" in e.body
         assert "12" in e.body
 
     def test_embedding_finished_attributes(self, adapter):
-        e = adapter.to_sentinel_event({"type": "embedding_finished", "model_name": "ada-002", "num_chunks": 3})
+        e = adapter.to_sentinel_event(
+            {"type": "embedding_finished", "model_name": "ada-002", "num_chunks": 3}
+        )
         assert e.attributes["model_name"] == "ada-002"
         assert e.attributes["num_chunks"] == 3
 
     def test_embedding_finished_event_id_prefixed(self, adapter):
-        e = adapter.to_sentinel_event({"type": "embedding_finished", "model_name": "m", "num_chunks": 0})
+        e = adapter.to_sentinel_event(
+            {"type": "embedding_finished", "model_name": "m", "num_chunks": 0}
+        )
         assert e.event_id.startswith("llamaindex-embed-")
 
 
 # ---------------------------------------------------------------------------
 # Unknown events
 # ---------------------------------------------------------------------------
+
 
 class TestFromUnknown:
     def test_unknown_type_gives_unknown_llamaindex_event(self, adapter):
@@ -462,37 +604,44 @@ class TestFromUnknown:
 # Timestamp parsing
 # ---------------------------------------------------------------------------
 
+
 class TestTimestampParsing:
     def test_iso_z_suffix_parsed(self, adapter):
-        e = adapter.to_sentinel_event({
-            "type": "query_started",
-            "query_str": "q",
-            "timestamp": "2026-06-01T12:00:00Z",
-        })
-        assert e.timestamp == datetime(2026, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+        e = adapter.to_sentinel_event(
+            {
+                "type": "query_started",
+                "query_str": "q",
+                "timestamp": "2026-06-01T12:00:00Z",
+            }
+        )
+        assert e.timestamp == datetime(2026, 6, 1, 12, 0, 0, tzinfo=UTC)
 
     def test_iso_offset_parsed(self, adapter):
-        e = adapter.to_sentinel_event({
-            "type": "query_started",
-            "query_str": "q",
-            "timestamp": "2026-06-01T12:00:00+00:00",
-        })
+        e = adapter.to_sentinel_event(
+            {
+                "type": "query_started",
+                "query_str": "q",
+                "timestamp": "2026-06-01T12:00:00+00:00",
+            }
+        )
         assert e.timestamp.year == 2026
 
     def test_missing_timestamp_uses_now(self, adapter):
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         e = adapter.to_sentinel_event({"type": "query_started", "query_str": "q"})
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
         assert before <= e.timestamp <= after
 
     def test_invalid_timestamp_falls_back_to_now(self, adapter):
-        before = datetime.now(timezone.utc)
-        e = adapter.to_sentinel_event({
-            "type": "query_started",
-            "query_str": "q",
-            "timestamp": "not-a-date",
-        })
-        after = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
+        e = adapter.to_sentinel_event(
+            {
+                "type": "query_started",
+                "query_str": "q",
+                "timestamp": "not-a-date",
+            }
+        )
+        after = datetime.now(UTC)
         assert before <= e.timestamp <= after
 
 
@@ -500,17 +649,28 @@ class TestTimestampParsing:
 # drain() and flush_into()
 # ---------------------------------------------------------------------------
 
+
 class TestDrainFlush:
     def _push(self, adapter, *types):
         for t in types:
             adapter._buffer_event(
-                adapter.to_sentinel_event({
-                    "type": t,
-                    "query_str": "q", "response": "r", "error": "e",
-                    "model_name": "m", "num_chunks": 0,
-                    "task_id": "t", "step_num": 0, "input": "", "output": "", "is_last": False,
-                    "tool_name": "fn", "tool_input": "",
-                })
+                adapter.to_sentinel_event(
+                    {
+                        "type": t,
+                        "query_str": "q",
+                        "response": "r",
+                        "error": "e",
+                        "model_name": "m",
+                        "num_chunks": 0,
+                        "task_id": "t",
+                        "step_num": 0,
+                        "input": "",
+                        "output": "",
+                        "is_last": False,
+                        "tool_name": "fn",
+                        "tool_input": "",
+                    }
+                )
             )
 
     def test_drain_returns_buffered_events(self, adapter):
@@ -563,6 +723,7 @@ class TestDrainFlush:
 # Buffer thread safety
 # ---------------------------------------------------------------------------
 
+
 class TestBufferThreadSafety:
     def test_concurrent_buffer_event_does_not_corrupt(self, adapter):
         errors = []
@@ -601,10 +762,9 @@ class TestBufferThreadSafety:
             except Exception as e:
                 errors.append(e)
 
-        threads = (
-            [threading.Thread(target=bufferer, args=(i,)) for i in range(25)]
-            + [threading.Thread(target=drainer) for _ in range(25)]
-        )
+        threads = [threading.Thread(target=bufferer, args=(i,)) for i in range(25)] + [
+            threading.Thread(target=drainer) for _ in range(25)
+        ]
         for t in threads:
             t.start()
         for t in threads:
@@ -616,6 +776,7 @@ class TestBufferThreadSafety:
 # ---------------------------------------------------------------------------
 # setup() — mocked dispatcher
 # ---------------------------------------------------------------------------
+
 
 class TestSetup:
     def _mock_modules(self):
@@ -662,9 +823,11 @@ class TestSetup:
 # Protocol conformance
 # ---------------------------------------------------------------------------
 
+
 class TestProtocolConformance:
     def test_satisfies_sentinel_adapter_protocol(self, adapter):
         from agentcop import SentinelAdapter
+
         assert isinstance(adapter, SentinelAdapter)
 
     def test_source_system_attribute(self, adapter):
@@ -677,6 +840,7 @@ class TestProtocolConformance:
 # ---------------------------------------------------------------------------
 # Integration with Sentinel
 # ---------------------------------------------------------------------------
+
 
 class TestSentinelIntegration:
     def test_all_error_events_collected(self, adapter):
@@ -709,11 +873,15 @@ class TestSentinelIntegration:
                     },
                 )
 
-        adapter._buffer_event(adapter.to_sentinel_event({
-            "type": "llm_predict_error",
-            "model_name": "gpt-4o",
-            "error": "rate limit exceeded",
-        }))
+        adapter._buffer_event(
+            adapter.to_sentinel_event(
+                {
+                    "type": "llm_predict_error",
+                    "model_name": "gpt-4o",
+                    "error": "rate limit exceeded",
+                }
+            )
+        )
 
         sentinel = Sentinel(detectors=[detect_llm_failure])
         adapter.flush_into(sentinel)
@@ -728,7 +896,10 @@ class TestSentinelIntegration:
         from agentcop import ViolationRecord
 
         def detect_empty_retrieval(event):
-            if event.event_type == "retrieval_finished" and event.attributes.get("num_nodes", -1) == 0:
+            if (
+                event.event_type == "retrieval_finished"
+                and event.attributes.get("num_nodes", -1) == 0
+            ):
                 return ViolationRecord(
                     violation_type="empty_retrieval",
                     severity="WARN",
@@ -737,11 +908,15 @@ class TestSentinelIntegration:
                     detail={"query_str": event.attributes.get("query_str")},
                 )
 
-        adapter._buffer_event(adapter.to_sentinel_event({
-            "type": "retrieval_finished",
-            "query_str": "obscure query",
-            "num_nodes": 0,
-        }))
+        adapter._buffer_event(
+            adapter.to_sentinel_event(
+                {
+                    "type": "retrieval_finished",
+                    "query_str": "obscure query",
+                    "num_nodes": 0,
+                }
+            )
+        )
 
         sentinel = Sentinel(detectors=[detect_empty_retrieval])
         adapter.flush_into(sentinel)
@@ -768,11 +943,15 @@ class TestSentinelIntegration:
                         detail={"tool_name": tool},
                     )
 
-        adapter._buffer_event(adapter.to_sentinel_event({
-            "type": "agent_tool_call",
-            "tool_name": "exec_code",
-            "tool_input": "os.system('rm -rf /')",
-        }))
+        adapter._buffer_event(
+            adapter.to_sentinel_event(
+                {
+                    "type": "agent_tool_call",
+                    "tool_name": "exec_code",
+                    "tool_input": "os.system('rm -rf /')",
+                }
+            )
+        )
 
         sentinel = Sentinel(detectors=[detect_restricted_tool])
         adapter.flush_into(sentinel)

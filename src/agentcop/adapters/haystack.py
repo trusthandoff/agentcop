@@ -57,8 +57,8 @@ from __future__ import annotations
 import contextlib
 import threading
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from agentcop.event import SentinelEvent
 
@@ -84,23 +84,19 @@ class _SpanProxy:
 
     def __init__(self, real=None) -> None:
         self._real = real
-        self._tags: Dict[str, Any] = {}
+        self._tags: dict[str, Any] = {}
 
     def set_tag(self, key: str, value: Any) -> None:
         self._tags[key] = value
         if self._real is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._real.set_tag(key, value)
-            except Exception:
-                pass
 
     def set_content_tag(self, key: str, value: Any) -> None:
         self._tags[key] = value
         if self._real is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._real.set_content_tag(key, value)
-            except Exception:
-                pass
 
     def raw_span(self) -> Any:
         if self._real is not None:
@@ -154,10 +150,10 @@ class HaystackSentinelAdapter:
 
     source_system = "haystack"
 
-    def __init__(self, run_id: Optional[str] = None) -> None:
+    def __init__(self, run_id: str | None = None) -> None:
         _require_haystack()
         self._run_id = run_id
-        self._buffer: List[SentinelEvent] = []
+        self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
 
     def setup(self, proxy_tracer=None) -> None:
@@ -201,9 +197,7 @@ class HaystackSentinelAdapter:
                 # --- start event ---
                 raw_start = _op_to_raw(operation_name, init_tags, "start")
                 if raw_start is not None:
-                    adapter_self._buffer_event(
-                        adapter_self.to_sentinel_event(raw_start)
-                    )
+                    adapter_self._buffer_event(adapter_self.to_sentinel_event(raw_start))
 
                 # Delegate to the previously registered tracer (if any).
                 if existing_inner is not None:
@@ -220,27 +214,19 @@ class HaystackSentinelAdapter:
                         yield proxy
 
                     # --- end event (normal exit) ---
-                    raw_end = _op_to_raw(
-                        operation_name, init_tags, "end", span_tags=proxy._tags
-                    )
+                    raw_end = _op_to_raw(operation_name, init_tags, "end", span_tags=proxy._tags)
                     if raw_end is not None:
-                        adapter_self._buffer_event(
-                            adapter_self.to_sentinel_event(raw_end)
-                        )
+                        adapter_self._buffer_event(adapter_self.to_sentinel_event(raw_end))
                 except Exception as exc:
                     # --- error event ---
-                    raw_err = _op_to_raw(
-                        operation_name, init_tags, "error", error=str(exc)
-                    )
+                    raw_err = _op_to_raw(operation_name, init_tags, "error", error=str(exc))
                     if raw_err is not None:
-                        adapter_self._buffer_event(
-                            adapter_self.to_sentinel_event(raw_err)
-                        )
+                        adapter_self._buffer_event(adapter_self.to_sentinel_event(raw_err))
                     raise
 
         target.provided_tracer = _WrappingTracer()
 
-    def to_sentinel_event(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def to_sentinel_event(self, raw: dict[str, Any]) -> SentinelEvent:
         """
         Translate one Haystack event dict into a SentinelEvent.
 
@@ -249,24 +235,24 @@ class HaystackSentinelAdapter:
         ``unknown_haystack_event`` with severity INFO.
         """
         dispatch = {
-            "pipeline_started":       self._from_pipeline_started,
-            "pipeline_finished":      self._from_pipeline_finished,
-            "pipeline_error":         self._from_pipeline_error,
-            "component_started":      self._from_component_started,
-            "component_finished":     self._from_component_finished,
-            "component_error":        self._from_component_error,
-            "llm_run_started":        self._from_llm_run_started,
-            "llm_run_finished":       self._from_llm_run_finished,
-            "llm_run_error":          self._from_llm_run_error,
-            "retriever_run_started":  self._from_retriever_run_started,
+            "pipeline_started": self._from_pipeline_started,
+            "pipeline_finished": self._from_pipeline_finished,
+            "pipeline_error": self._from_pipeline_error,
+            "component_started": self._from_component_started,
+            "component_finished": self._from_component_finished,
+            "component_error": self._from_component_error,
+            "llm_run_started": self._from_llm_run_started,
+            "llm_run_finished": self._from_llm_run_finished,
+            "llm_run_error": self._from_llm_run_error,
+            "retriever_run_started": self._from_retriever_run_started,
             "retriever_run_finished": self._from_retriever_run_finished,
-            "embedder_run_started":   self._from_embedder_run_started,
-            "embedder_run_finished":  self._from_embedder_run_finished,
+            "embedder_run_started": self._from_embedder_run_started,
+            "embedder_run_finished": self._from_embedder_run_finished,
         }
         handler = dispatch.get(raw.get("type", ""), self._from_unknown)
         return handler(raw)
 
-    def drain(self) -> List[SentinelEvent]:
+    def drain(self) -> list[SentinelEvent]:
         """Return all buffered SentinelEvents and clear the buffer."""
         with self._lock:
             events = list(self._buffer)
@@ -289,20 +275,20 @@ class HaystackSentinelAdapter:
     # Timestamp helper
     # ------------------------------------------------------------------
 
-    def _parse_timestamp(self, raw: Dict[str, Any]) -> datetime:
+    def _parse_timestamp(self, raw: dict[str, Any]) -> datetime:
         ts = raw.get("timestamp")
         if ts:
             try:
                 return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
             except ValueError:
                 pass
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     # ------------------------------------------------------------------
     # Private translators — pipeline
     # ------------------------------------------------------------------
 
-    def _from_pipeline_started(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_pipeline_started(self, raw: dict[str, Any]) -> SentinelEvent:
         pipeline_name = raw.get("pipeline_name", "unknown")
         return SentinelEvent(
             event_id=f"haystack-pipeline-{uuid.uuid4()}",
@@ -315,7 +301,7 @@ class HaystackSentinelAdapter:
             attributes={"pipeline_name": pipeline_name},
         )
 
-    def _from_pipeline_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_pipeline_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         pipeline_name = raw.get("pipeline_name", "unknown")
         output_keys = raw.get("output_keys") or []
         return SentinelEvent(
@@ -329,7 +315,7 @@ class HaystackSentinelAdapter:
             attributes={"pipeline_name": pipeline_name, "output_keys": list(output_keys)},
         )
 
-    def _from_pipeline_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_pipeline_error(self, raw: dict[str, Any]) -> SentinelEvent:
         pipeline_name = raw.get("pipeline_name", "unknown")
         error = raw.get("error", "")
         return SentinelEvent(
@@ -347,7 +333,7 @@ class HaystackSentinelAdapter:
     # Private translators — generic component
     # ------------------------------------------------------------------
 
-    def _from_component_started(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_component_started(self, raw: dict[str, Any]) -> SentinelEvent:
         component_name = raw.get("component_name", "unknown")
         component_type = raw.get("component_type", "unknown")
         return SentinelEvent(
@@ -361,7 +347,7 @@ class HaystackSentinelAdapter:
             attributes={"component_name": component_name, "component_type": component_type},
         )
 
-    def _from_component_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_component_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         component_name = raw.get("component_name", "unknown")
         component_type = raw.get("component_type", "unknown")
         output_keys = raw.get("output_keys") or []
@@ -380,7 +366,7 @@ class HaystackSentinelAdapter:
             },
         )
 
-    def _from_component_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_component_error(self, raw: dict[str, Any]) -> SentinelEvent:
         component_name = raw.get("component_name", "unknown")
         component_type = raw.get("component_type", "unknown")
         error = raw.get("error", "")
@@ -403,7 +389,7 @@ class HaystackSentinelAdapter:
     # Private translators — LLM
     # ------------------------------------------------------------------
 
-    def _from_llm_run_started(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_llm_run_started(self, raw: dict[str, Any]) -> SentinelEvent:
         component_name = raw.get("component_name", "unknown")
         model = raw.get("model", "unknown")
         return SentinelEvent(
@@ -417,7 +403,7 @@ class HaystackSentinelAdapter:
             attributes={"component_name": component_name, "model": model},
         )
 
-    def _from_llm_run_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_llm_run_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         component_name = raw.get("component_name", "unknown")
         model = raw.get("model", "unknown")
         reply = raw.get("reply", "")
@@ -432,7 +418,7 @@ class HaystackSentinelAdapter:
             attributes={"component_name": component_name, "model": model, "reply": reply},
         )
 
-    def _from_llm_run_error(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_llm_run_error(self, raw: dict[str, Any]) -> SentinelEvent:
         component_name = raw.get("component_name", "unknown")
         model = raw.get("model", "unknown")
         error = raw.get("error", "")
@@ -451,7 +437,7 @@ class HaystackSentinelAdapter:
     # Private translators — retriever
     # ------------------------------------------------------------------
 
-    def _from_retriever_run_started(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_retriever_run_started(self, raw: dict[str, Any]) -> SentinelEvent:
         component_name = raw.get("component_name", "unknown")
         query = raw.get("query", "")
         return SentinelEvent(
@@ -465,7 +451,7 @@ class HaystackSentinelAdapter:
             attributes={"component_name": component_name, "query": query},
         )
 
-    def _from_retriever_run_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_retriever_run_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         component_name = raw.get("component_name", "unknown")
         num_documents = raw.get("num_documents", 0)
         return SentinelEvent(
@@ -483,7 +469,7 @@ class HaystackSentinelAdapter:
     # Private translators — embedder
     # ------------------------------------------------------------------
 
-    def _from_embedder_run_started(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_embedder_run_started(self, raw: dict[str, Any]) -> SentinelEvent:
         component_name = raw.get("component_name", "unknown")
         model = raw.get("model", "unknown")
         return SentinelEvent(
@@ -497,7 +483,7 @@ class HaystackSentinelAdapter:
             attributes={"component_name": component_name, "model": model},
         )
 
-    def _from_embedder_run_finished(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_embedder_run_finished(self, raw: dict[str, Any]) -> SentinelEvent:
         component_name = raw.get("component_name", "unknown")
         model = raw.get("model", "unknown")
         return SentinelEvent(
@@ -515,7 +501,7 @@ class HaystackSentinelAdapter:
     # Private translator — unknown
     # ------------------------------------------------------------------
 
-    def _from_unknown(self, raw: Dict[str, Any]) -> SentinelEvent:
+    def _from_unknown(self, raw: dict[str, Any]) -> SentinelEvent:
         original_type = raw.get("type", "unknown")
         return SentinelEvent(
             event_id=f"haystack-unknown-{uuid.uuid4()}",
@@ -533,13 +519,14 @@ class HaystackSentinelAdapter:
 # Module-level helpers used by setup()'s _WrappingTracer
 # ---------------------------------------------------------------------------
 
+
 def _op_to_raw(
     operation_name: str,
-    init_tags: Dict[str, Any],
+    init_tags: dict[str, Any],
     phase: str,
-    span_tags: Optional[Dict[str, Any]] = None,
+    span_tags: dict[str, Any] | None = None,
     error: str = "",
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Convert a Haystack operation name + span tags into a normalized event dict,
     or ``None`` if the operation should not produce a SentinelEvent.
@@ -563,9 +550,7 @@ def _op_to_raw(
     pipeline_name = str(all_tags.get("haystack.pipeline.name", "") or "unknown")
     component_name = str(all_tags.get("haystack.component.name", "") or "unknown")
     component_type_full = str(all_tags.get("haystack.component.type", "") or "")
-    component_type_short = (
-        component_type_full.split(".")[-1] if component_type_full else "unknown"
-    )
+    component_type_short = component_type_full.split(".")[-1] if component_type_full else "unknown"
 
     if operation_name == "haystack.pipeline.run":
         if phase == "start":
@@ -614,9 +599,7 @@ def _op_to_raw(
                 }
 
         if category == "retriever":
-            query = str(
-                span_tags.get("haystack.component.input.query", "") or ""
-            )[:500]
+            query = str(span_tags.get("haystack.component.input.query", "") or "")[:500]
             if phase == "start":
                 return {
                     "type": "retriever_run_started",
@@ -689,15 +672,11 @@ def _component_category(component_type: str) -> str:
     return "component"
 
 
-def _extract_model(tags: Dict[str, Any]) -> str:
+def _extract_model(tags: dict[str, Any]) -> str:
     """Best-effort model name extraction from Haystack span tags."""
     meta_list = tags.get("haystack.component.output.meta") or []
     if meta_list and isinstance(meta_list, list) and isinstance(meta_list[0], dict):
         name = meta_list[0].get("model") or meta_list[0].get("model_name")
         if name:
             return str(name)
-    return str(
-        tags.get("haystack.llm.model_name", "")
-        or tags.get("model", "")
-        or "unknown"
-    )
+    return str(tags.get("haystack.llm.model_name", "") or tags.get("model", "") or "unknown")

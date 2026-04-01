@@ -1,4 +1,4 @@
-# agentcop
+# Sentinel — The Agent Cop
 
 **The cop for agent fleets.**
 

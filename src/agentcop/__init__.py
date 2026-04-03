@@ -43,4 +43,7 @@ __all__ = [
     "IdentityStore",
     "InMemoryIdentityStore",
     "SQLiteIdentityStore",
+    # Badge — imported from agentcop.badge (requires agentcop[badge])
+    # AgentBadge, BadgeIssuer, BadgeStore, InMemoryBadgeStore, SQLiteBadgeStore,
+    # generate_svg, generate_badge_card, generate_markdown, tier_from_score
 ]

@@ -60,6 +60,15 @@ interface CheckResult {
     severity: string;
     detail: Record<string, unknown>;
   }>;
+  badge_url?: string;
+}
+
+interface BadgeStatusResult {
+  has_badge: boolean;
+  badge_id?: string;
+  tier?: string;
+  trust_score?: number;
+  verification_url?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +105,24 @@ async function runSkill(subcmd: string, text: string): Promise<CheckResult | nul
 }
 
 // ---------------------------------------------------------------------------
+// Helper: fetch the badge status (non-blocking, best-effort)
+// ---------------------------------------------------------------------------
+
+async function getBadgeUrl(): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync(
+      PYTHON_BIN!,
+      [SKILL_PY, "badge", "status"],
+      { timeout: TIMEOUT_MS, env: { ...process.env } },
+    );
+    const result = JSON.parse(stdout.trim()) as BadgeStatusResult;
+    return result.has_badge && result.verification_url ? result.verification_url : null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Helper: format a violation alert for the user's channel
 // (CommonMark: ** = bold, ` = code — OpenClaw IR handles per-channel rendering)
 // ---------------------------------------------------------------------------
@@ -103,13 +130,15 @@ async function runSkill(subcmd: string, text: string): Promise<CheckResult | nul
 function formatAlert(
   v: NonNullable<CheckResult["violations"]>[0],
   context: string,
+  badgeUrl?: string | null,
 ): string {
   const owasp = (v.detail?.owasp as string) ?? "LLM??";
   const patterns = (v.detail?.matched_patterns as string[])?.slice(0, 3).join(", ") ?? "";
   return (
     `🚨 **AgentCop [${v.severity}]** — ${owasp} ${v.violation_type}\n` +
     (patterns ? `Matched: \`${patterns}\`\n` : "") +
-    `Context: ${context}`
+    `Context: ${context}` +
+    (badgeUrl ? `\nBadge: ${badgeUrl}` : "")
   );
 }
 
@@ -117,7 +146,43 @@ function formatAlert(
 // Main handler — all async checks awaited inline
 // ---------------------------------------------------------------------------
 
+// Handle /security badge command in message channels
+async function handleBadgeCommand(event: OpenClawEvent): Promise<boolean> {
+  const body = (event.context.bodyForAgent ?? event.context.content ?? "").trim();
+  if (body !== "/security badge") return false;
+
+  try {
+    const { stdout } = await execFileAsync(
+      PYTHON_BIN!,
+      [SKILL_PY, "badge", "generate"],
+      { timeout: TIMEOUT_MS * 2, env: { ...process.env } },
+    );
+    const result = JSON.parse(stdout.trim()) as {
+      badge_id?: string; tier?: string; trust_score?: number;
+      verification_url?: string; error?: string;
+    };
+    if (result.error) {
+      event.messages.push(`⚠️ **AgentCop badge**: ${result.error}`);
+    } else {
+      const tierEmoji = result.tier === "SECURED" ? "🟢" : result.tier === "MONITORED" ? "🟡" : "🔴";
+      event.messages.push(
+        `🤖 **AgentCop Badge Generated**\n` +
+        `${tierEmoji} Tier: **${result.tier}**  Score: **${result.trust_score}/100**\n` +
+        `Badge: ${result.verification_url}`,
+      );
+    }
+  } catch {
+    event.messages.push("⚠️ **AgentCop**: badge generation failed — run `pip install agentcop[badge]`");
+  }
+  return true;
+}
+
 const handler = async (event: OpenClawEvent): Promise<void> => {
+  // /security badge — generate and display badge in channel
+  if (event.type === "message" && event.action === "received") {
+    if (await handleBadgeCommand(event)) return;
+  }
+
   // LLM01 — taint-check inbound messages before the agent sees them
   if (event.type === "message" && event.action === "received") {
     const body = event.context.bodyForAgent ?? event.context.content ?? "";
@@ -132,8 +197,9 @@ const handler = async (event: OpenClawEvent): Promise<void> => {
       return;
     }
     if (result.tainted && result.violations?.length) {
+      const badgeUrl = await getBadgeUrl();
       for (const v of result.violations) {
-        event.messages.push(formatAlert(v, "inbound message"));
+        event.messages.push(formatAlert(v, "inbound message", badgeUrl));
       }
     }
     return;
@@ -146,8 +212,9 @@ const handler = async (event: OpenClawEvent): Promise<void> => {
 
     const result = await runSkill("output-check", content);
     if (!result || !result.unsafe || !result.violations?.length) return;
+    const badgeUrl = await getBadgeUrl();
     for (const v of result.violations) {
-      event.messages.push(formatAlert(v, "agent response"));
+      event.messages.push(formatAlert(v, "agent response", badgeUrl));
     }
     return;
   }
@@ -161,8 +228,9 @@ const handler = async (event: OpenClawEvent): Promise<void> => {
 
     const result = await runSkill("output-check", content);
     if (!result || !result.unsafe || !result.violations?.length) return;
+    const badgeUrl = await getBadgeUrl();
     for (const v of result.violations) {
-      event.messages.push(formatAlert(v, "tool result"));
+      event.messages.push(formatAlert(v, "tool result", badgeUrl));
     }
   }
 };

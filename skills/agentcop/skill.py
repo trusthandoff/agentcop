@@ -8,6 +8,13 @@ Subcommands:
   scan [target]                — targeted OWASP LLM Top 10 assessment
   taint-check <text>           — LLM01 prompt-injection taint check (JSON)
   output-check <text>          — LLM02 insecure-output pattern check (JSON)
+  badge generate               — issue a signed security badge for this agent
+  badge verify <badge_id>      — verify a badge by ID or URL
+  badge renew <badge_id>       — renew an expiring badge
+  badge revoke <badge_id>      — revoke a badge
+  badge shield <badge_id>      — print shields.io redirect URL
+  badge markdown <badge_id>    — print Markdown README snippet
+  badge status                 — show latest badge for this agent
 
 Exit codes:
   0 — success (violations may still be present — check JSON)
@@ -357,6 +364,273 @@ def cmd_output_check(args: list[str]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Badge subcommands
+# ---------------------------------------------------------------------------
+
+_BADGE_DB = str(_STATE_DIR / "badges.db")
+
+
+def _get_badge_store():
+    try:
+        from agentcop.badge import SQLiteBadgeStore
+        return SQLiteBadgeStore(_BADGE_DB)
+    except ImportError:
+        return None
+
+
+def _get_badge_issuer(store=None):
+    try:
+        from agentcop.badge import BadgeIssuer
+        return BadgeIssuer(store=store)
+    except ImportError:
+        return None
+
+
+def cmd_badge(args: list[str]) -> None:
+    if not args:
+        print(json.dumps({"error": "badge requires a subcommand: generate|verify|renew|revoke|shield|markdown|status"}))
+        sys.exit(2)
+
+    sub = args[0]
+
+    try:
+        from agentcop.badge import (  # noqa: F401
+            BadgeIssuer,
+            SQLiteBadgeStore,
+            generate_markdown,
+            generate_svg,
+        )
+    except ImportError:
+        print(json.dumps({
+            "error": "agentcop[badge] not installed",
+            "hint": "pip install agentcop[badge]",
+        }))
+        sys.exit(1)
+
+    if sub == "generate":
+        _cmd_badge_generate(args[1:])
+    elif sub == "verify":
+        _cmd_badge_verify(args[1:])
+    elif sub == "renew":
+        _cmd_badge_renew(args[1:])
+    elif sub == "revoke":
+        _cmd_badge_revoke(args[1:])
+    elif sub == "shield":
+        _cmd_badge_shield(args[1:])
+    elif sub == "markdown":
+        _cmd_badge_markdown(args[1:])
+    elif sub == "status":
+        _cmd_badge_status()
+    else:
+        print(json.dumps({"error": f"unknown badge subcommand: {sub}"}))
+        sys.exit(2)
+
+
+def _cmd_badge_generate(args: list[str]) -> None:
+    from agentcop import SQLiteIdentityStore
+    from agentcop.badge import BadgeIssuer, SQLiteBadgeStore
+
+    # Parse optional --agent-id and --code flags
+    agent_id = os.environ.get("OPENCLAW_AGENT_ID", "openclaw-default")
+    code_path = None
+    i = 0
+    while i < len(args):
+        if args[i] == "--agent-id" and i + 1 < len(args):
+            agent_id = args[i + 1]
+            i += 2
+        elif args[i] == "--code" and i + 1 < len(args):
+            code_path = args[i + 1]
+            i += 2
+        else:
+            i += 1
+
+    store = SQLiteIdentityStore(_IDENTITY_DB)
+    badge_store = SQLiteBadgeStore(_BADGE_DB)
+    issuer = BadgeIssuer(store=badge_store)
+
+    identity = store.load(agent_id)
+    if identity is None:
+        # Register fresh identity for the given agent_id
+        from pathlib import Path as _Path
+
+        from agentcop import AgentIdentity
+        code = _Path(code_path) if code_path else None
+        identity = AgentIdentity.register(
+            agent_id=agent_id,
+            code=code,
+            metadata={"framework": "openclaw", "skill": "agentcop", "host": socket.gethostname()},
+            store=store,
+        )
+
+    badge = identity.generate_badge(issuer=issuer, store=badge_store)
+
+    print(json.dumps({
+        "badge_id": badge.badge_id,
+        "agent_id": badge.agent_id,
+        "tier": badge.tier,
+        "trust_score": badge.trust_score,
+        "verification_url": badge.verification_url,
+        "shield_url": badge.shield_url,
+        "issued_at": badge.issued_at.isoformat(),
+        "expires_at": badge.expires_at.isoformat(),
+        "revoked": badge.revoked,
+        "signature": badge.signature[:16] + "...",
+    }, indent=2))
+
+
+def _cmd_badge_verify(args: list[str]) -> None:
+    if not args:
+        print(json.dumps({"error": "badge verify requires <badge_id>"}))
+        sys.exit(2)
+
+    from agentcop.badge import BadgeIssuer, SQLiteBadgeStore
+
+    badge_id = args[0].split("/")[-1]  # accept full URL or bare ID
+    badge_store = SQLiteBadgeStore(_BADGE_DB)
+    issuer = BadgeIssuer(store=badge_store)
+
+    badge = badge_store.load(badge_id)
+    if badge is None:
+        print(json.dumps({"valid": False, "error": "badge not found", "badge_id": badge_id}))
+        sys.exit(0)
+
+    sig_valid = issuer.verify(badge)
+    print(json.dumps({
+        "valid": sig_valid and badge.is_valid(),
+        "signature_valid": sig_valid,
+        "revoked": badge.revoked,
+        "expired": badge.is_expired(),
+        "tier": badge.tier,
+        "trust_score": badge.trust_score,
+        "agent_id": badge.agent_id,
+        "badge_id": badge.badge_id,
+        "issued_at": badge.issued_at.isoformat(),
+        "expires_at": badge.expires_at.isoformat(),
+        "revocation_reason": badge.revocation_reason,
+    }, indent=2))
+
+
+def _cmd_badge_renew(args: list[str]) -> None:
+    if not args:
+        print(json.dumps({"error": "badge renew requires <badge_id>"}))
+        sys.exit(2)
+
+    from agentcop.badge import BadgeIssuer, SQLiteBadgeStore
+
+    badge_id = args[0]
+    badge_store = SQLiteBadgeStore(_BADGE_DB)
+    issuer = BadgeIssuer(store=badge_store)
+
+    badge = badge_store.load(badge_id)
+    if badge is None:
+        print(json.dumps({"error": "badge not found", "badge_id": badge_id}))
+        sys.exit(0)
+
+    renewed = issuer.renew(badge, store=badge_store)
+    print(json.dumps({
+        "renewed": True,
+        "old_badge_id": badge_id,
+        "new_badge_id": renewed.badge_id,
+        "tier": renewed.tier,
+        "expires_at": renewed.expires_at.isoformat(),
+        "verification_url": renewed.verification_url,
+    }, indent=2))
+
+
+def _cmd_badge_revoke(args: list[str]) -> None:
+    if not args:
+        print(json.dumps({"error": "badge revoke requires <badge_id>"}))
+        sys.exit(2)
+
+    from agentcop.badge import SQLiteBadgeStore
+
+    badge_id = args[0]
+    reason = args[1] if len(args) > 1 else "manual_revoke"
+    badge_store = SQLiteBadgeStore(_BADGE_DB)
+
+    revoked = badge_store.revoke(badge_id, reason=reason)
+    print(json.dumps({
+        "revoked": revoked,
+        "badge_id": badge_id,
+        "reason": reason,
+    }, indent=2))
+
+
+def _cmd_badge_shield(args: list[str]) -> None:
+    if not args:
+        print(json.dumps({"error": "badge shield requires <badge_id>"}))
+        sys.exit(2)
+
+    from agentcop.badge import BADGE_BASE_URL, SQLiteBadgeStore
+
+    badge_id = args[0]
+    badge_store = SQLiteBadgeStore(_BADGE_DB)
+    badge = badge_store.load(badge_id)
+    if badge is None:
+        print(json.dumps({"error": "badge not found"}))
+        sys.exit(0)
+
+    print(json.dumps({
+        "shield_url": badge.shield_url,
+        "verification_url": badge.verification_url,
+        "svg_url": f"{BADGE_BASE_URL}/{badge_id}/svg",
+    }))
+
+
+def _cmd_badge_markdown(args: list[str]) -> None:
+    if not args:
+        print(json.dumps({"error": "badge markdown requires <badge_id>"}))
+        sys.exit(2)
+
+    from agentcop.badge import SQLiteBadgeStore, generate_markdown
+
+    badge_id = args[0]
+    badge_store = SQLiteBadgeStore(_BADGE_DB)
+    badge = badge_store.load(badge_id)
+    if badge is None:
+        print(json.dumps({"error": "badge not found"}))
+        sys.exit(0)
+
+    # Print raw markdown (not JSON-wrapped) for easy copy-paste
+    print(generate_markdown(badge))
+
+
+def _cmd_badge_status() -> None:
+    from agentcop.badge import BadgeIssuer, SQLiteBadgeStore
+
+    agent_id = os.environ.get("OPENCLAW_AGENT_ID", "openclaw-default")
+    badge_store = SQLiteBadgeStore(_BADGE_DB)
+    issuer = BadgeIssuer(store=badge_store)
+
+    badge = badge_store.load_latest(agent_id)
+    if badge is None:
+        print(json.dumps({
+            "has_badge": False,
+            "agent_id": agent_id,
+            "hint": "run: agentcop badge generate",
+        }, indent=2))
+        return
+
+    sig_valid = issuer.verify(badge)
+    print(json.dumps({
+        "has_badge": True,
+        "badge_id": badge.badge_id,
+        "agent_id": badge.agent_id,
+        "tier": badge.tier,
+        "trust_score": badge.trust_score,
+        "signature_valid": sig_valid,
+        "valid": sig_valid and badge.is_valid(),
+        "revoked": badge.revoked,
+        "expired": badge.is_expired(),
+        "expires_soon": badge.expires_soon(),
+        "issued_at": badge.issued_at.isoformat(),
+        "expires_at": badge.expires_at.isoformat(),
+        "verification_url": badge.verification_url,
+        "shield_url": badge.shield_url,
+    }, indent=2))
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -378,6 +652,8 @@ def main() -> None:
         cmd_taint_check(args[1:])
     elif cmd == "output-check":
         cmd_output_check(args[1:])
+    elif cmd == "badge":
+        cmd_badge(args[1:])
     else:
         print(json.dumps({"error": f"unknown command: {cmd}"}))
         sys.exit(2)

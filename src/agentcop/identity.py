@@ -274,6 +274,8 @@ class AgentIdentity:
         self._consecutive_clean = 0
         self._violation_type_counts: dict[str, int] = {}
         self._execution_buffer: list[dict[str, Any]] = []
+        # Optional badge store set by generate_badge(); used for auto-revoke.
+        self._badge_store: Any | None = None
 
     # ── Registration ──────────────────────────────────────────────────────
 
@@ -459,6 +461,10 @@ class AgentIdentity:
             if self.trust_score < 30 and self.status == "active":
                 self.status = "flagged"
                 additional.append(self._make_flagged_violation(violation.source_event_id))
+
+        # Auto-revoke any active badge when trust drops below threshold
+        if self.trust_score < 30 and self._badge_store is not None:
+            self._revoke_active_badge("trust_below_30")
 
         return additional
 
@@ -716,6 +722,75 @@ class AgentIdentity:
         identity._consecutive_clean = data.get("consecutive_clean", 0)
         identity._violation_type_counts = dict(data.get("violation_type_counts", {}))
         return identity
+
+    # ── Badge integration ─────────────────────────────────────────────────
+
+    def _revoke_active_badge(self, reason: str) -> None:
+        """Revoke the latest active badge for this agent.  Must NOT hold ``self._lock``."""
+        if self._badge_store is None:
+            return
+        try:
+            latest = self._badge_store.load_latest(self.agent_id)
+            if latest is not None and not latest.revoked:
+                self._badge_store.revoke(latest.badge_id, reason=reason)
+        except Exception:
+            pass  # badge revocation is best-effort
+
+    def generate_badge(
+        self,
+        *,
+        issuer: Any | None = None,
+        store: Any | None = None,
+        scan_count: int = 0,
+    ) -> Any:
+        """Generate a cryptographically signed security badge for this agent.
+
+        Derives ``trust_score``, ``fingerprint``, and ``framework`` from the
+        current identity state.  If ``trust_score`` is below 30, the badge is
+        immediately revoked (``revocation_reason="trust_below_30"``).
+
+        Requires ``agentcop[badge]`` (``pip install agentcop[badge]``).
+
+        Args:
+            issuer:     :class:`~agentcop.badge.BadgeIssuer` instance.  A fresh
+                        in-memory issuer is created when not provided.
+            store:      :class:`~agentcop.badge.BadgeStore` for persistence.
+            scan_count: Total number of scans run so far (informational).
+
+        Returns:
+            :class:`~agentcop.badge.AgentBadge`
+        """
+        from .badge import BadgeIssuer, InMemoryBadgeStore
+
+        target_store = store or InMemoryBadgeStore()
+        _issuer = issuer or BadgeIssuer(store=target_store)
+
+        with self._lock:
+            trust = self.trust_score
+            fp = self.fingerprint
+            framework = self.metadata.get("framework", "generic")
+            viol_counts = dict(self._violation_type_counts)
+
+        # Build violation breakdown by severity key names
+        violations = {
+            "critical": viol_counts.get("critical", 0),
+            "warning": viol_counts.get("warning", 0),
+            "info": viol_counts.get("info", 0),
+            "protected": viol_counts.get("protected", 0),
+        }
+
+        # Remember store for auto-revoke on future trust drops
+        self._badge_store = target_store
+
+        return _issuer.issue(
+            agent_id=self.agent_id,
+            fingerprint=fp,
+            trust_score=trust,
+            violations=violations,
+            framework=framework,
+            scan_count=scan_count,
+            store=target_store,
+        )
 
     def __repr__(self) -> str:
         return (

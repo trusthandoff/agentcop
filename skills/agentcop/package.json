@@ -1,0 +1,23 @@
+{
+  "name": "openclaw-skill-agentcop",
+  "version": "0.4.2",
+  "description": "OWASP LLM Top 10 security monitor for OpenClaw — taint-checks messages, detects violations, alerts on policy breaches",
+  "keywords": ["security", "owasp", "llm", "monitoring", "agentcop", "audit", "openclaw"],
+  "homepage": "https://agentcop.live",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/trusthandoff/agentcop"
+  },
+  "license": "MIT",
+  "authors": [
+    "Shay Mizuno",
+    "Hind Tagmouti"
+  ],
+  "openclaw": {
+    "type": "skill",
+    "slug": "agentcop",
+    "clawhub": true,
+    "companion-hook": "agentcop-monitor",
+    "python-package": "agentcop>=0.4"
+  }
+}

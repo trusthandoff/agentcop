@@ -1,5 +1,12 @@
 from .adapters import SentinelAdapter
 from .event import SentinelEvent, ViolationRecord
+from .identity import (
+    AgentIdentity,
+    BehavioralBaseline,
+    IdentityStore,
+    InMemoryIdentityStore,
+    SQLiteIdentityStore,
+)
 from .sentinel import Sentinel, ViolationDetector, WatchHandle
 from .violations import (
     DEFAULT_DETECTORS,
@@ -9,7 +16,7 @@ from .violations import (
     detect_stale_capability,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.4.0"
 
 __all__ = [
     # Core schema
@@ -27,4 +34,10 @@ __all__ = [
     "detect_ai_generated_payload",
     # Adapter protocol
     "SentinelAdapter",
+    # Agent identity
+    "AgentIdentity",
+    "BehavioralBaseline",
+    "IdentityStore",
+    "InMemoryIdentityStore",
+    "SQLiteIdentityStore",
 ]

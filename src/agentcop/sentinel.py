@@ -60,6 +60,14 @@ class Sentinel:
             for raw in pipeline:
                 sentinel.push(adapter.to_sentinel_event(raw))
 
+    With agent identity::
+
+        identity = AgentIdentity.register(agent_id="my-agent", code=fn)
+        sentinel.attach_identity(identity)
+
+        with sentinel.watch(identity.observe_violation):
+            sentinel.push(event)  # auto-enriched with identity metadata
+
     Custom detectors::
 
         def my_detector(event: SentinelEvent) -> ViolationRecord | None:
@@ -82,11 +90,38 @@ class Sentinel:
         self._detectors: list[ViolationDetector] = (
             list(detectors) if detectors is not None else list(DEFAULT_DETECTORS)
         )
+        # Violation hooks: called after each violation is detected.
+        # Each hook receives the ViolationRecord and may return additional
+        # violations (e.g. an agent_flagged record from AgentIdentity).
+        self._violation_hooks: list[Callable[[ViolationRecord], list[ViolationRecord]]] = []
+        self._identity: object | None = None  # AgentIdentity, avoid circular import
 
     def register_detector(self, fn: ViolationDetector) -> None:
         """Append a custom detector. Runs after all built-in detectors."""
         with self._lock:
             self._detectors.append(fn)
+
+    def attach_identity(self, identity: object) -> None:
+        """Attach an :class:`~agentcop.AgentIdentity` for automatic event enrichment
+        and drift monitoring.
+
+        After attaching:
+
+        - Events pushed via :meth:`push` are enriched with identity attributes
+          (``agent_id``, ``trust_score``, ``fingerprint``, ``identity_status``).
+        - A drift detector is automatically registered on this Sentinel.
+        - In :meth:`watch` mode, violations returned by the watch callback are
+          also forwarded to the identity's :meth:`~AgentIdentity.observe_violation`
+          hook so the trust score stays current.  Pass ``identity.observe_violation``
+          as the *on_violation* callback::
+
+              with sentinel.watch(identity.observe_violation):
+                  sentinel.push(event)
+        """
+        with self._lock:
+            self._identity = identity
+            self._violation_hooks.append(identity.observe_violation)  # type: ignore[union-attr]
+        self.register_detector(identity.make_drift_detector())  # type: ignore[union-attr]
 
     def ingest(self, events: Iterable[SentinelEvent]) -> None:
         """Replace the internal event buffer with the provided events."""
@@ -99,7 +134,22 @@ class Sentinel:
 
         Preferred over :meth:`ingest` when using :meth:`watch`, because it
         accumulates events rather than replacing the buffer.
+
+        If an :class:`~agentcop.AgentIdentity` is attached via
+        :meth:`attach_identity`, the event is enriched with a snapshot of the
+        identity's current ``agent_id``, ``trust_score``, ``fingerprint``, and
+        ``identity_status`` attributes before it is stored.
         """
+        with self._lock:
+            identity = self._identity
+
+        if identity is not None:
+            enriched_attrs = {
+                **event.attributes,
+                **identity.as_event_attributes(),  # type: ignore[union-attr]
+            }
+            event = event.model_copy(update={"attributes": enriched_attrs})
+
         with self._lock:
             self._events.append(event)
 
@@ -107,6 +157,7 @@ class Sentinel:
         with self._lock:
             events = list(self._events)
             detectors = list(self._detectors)
+            violation_hooks = list(self._violation_hooks)
 
         violations: list[ViolationRecord] = []
         for event in events:
@@ -114,11 +165,14 @@ class Sentinel:
                 result = detector(event)
                 if result is not None:
                     violations.append(result)
+                    for hook in violation_hooks:
+                        extras = hook(result)
+                        violations.extend(extras)
         return violations
 
     def watch(
         self,
-        on_violation: Callable[[ViolationRecord], None],
+        on_violation: Callable[[ViolationRecord], list[ViolationRecord] | None],
         *,
         poll_interval: float = 0.1,
     ) -> WatchHandle:
@@ -134,9 +188,14 @@ class Sentinel:
         loop detects the replacement and re-scans from the beginning of the new
         buffer so no events are silently skipped.
 
+        *on_violation* may return a list of additional violations (e.g. when
+        using :meth:`AgentIdentity.observe_violation <agentcop.AgentIdentity.observe_violation>`);
+        those are also passed to *on_violation* recursively.
+
         Args:
             on_violation: Callback invoked for every detected violation.
                           Called from the background thread — make it thread-safe.
+                          May return additional ViolationRecords (or None/[]).
             poll_interval: Seconds between buffer scans (default 0.1).
 
         Returns:
@@ -151,6 +210,7 @@ class Sentinel:
                 with self._lock:
                     snapshot = list(self._events)
                     detectors = list(self._detectors)
+                    violation_hooks = list(self._violation_hooks)
 
                 # ingest() replaced the buffer with fewer events — reset
                 if len(snapshot) < watermark:
@@ -160,7 +220,13 @@ class Sentinel:
                     for detector in detectors:
                         result = detector(event)
                         if result is not None:
-                            on_violation(result)
+                            extras = on_violation(result) or []
+                            for extra_v in extras:
+                                on_violation(extra_v)
+                            for hook in violation_hooks:
+                                hook_extras = hook(result)
+                                for extra_v in hook_extras:
+                                    on_violation(extra_v)
 
                 watermark = len(snapshot)
                 stop_event.wait(poll_interval)

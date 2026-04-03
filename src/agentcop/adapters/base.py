@@ -18,6 +18,9 @@ class SentinelAdapter(Protocol):
     Implementors translate raw event dicts (or any domain object) into
     the universal SentinelEvent schema.
 
+    ``source_system`` **must** be a non-empty string.  Use
+    :func:`validate_adapter` to assert this at runtime.
+
     Example::
 
         class MySystemAdapter:
@@ -34,3 +37,22 @@ class SentinelAdapter(Protocol):
     source_system: str
 
     def to_sentinel_event(self, raw: dict[str, Any]) -> SentinelEvent: ...
+
+
+def validate_adapter(adapter: Any) -> None:
+    """Assert that *adapter* is a valid :class:`SentinelAdapter`.
+
+    Raises:
+        TypeError: if *adapter* does not implement the :class:`SentinelAdapter` protocol.
+        ValueError: if ``adapter.source_system`` is not a non-empty string.
+    """
+    if not isinstance(adapter, SentinelAdapter):
+        raise TypeError(
+            f"{adapter!r} does not implement the SentinelAdapter protocol "
+            "(must have a 'source_system' attribute and a 'to_sentinel_event' method)"
+        )
+    if not isinstance(adapter.source_system, str) or not adapter.source_system.strip():
+        raise ValueError(
+            f"SentinelAdapter.source_system must be a non-empty string, "
+            f"got {adapter.source_system!r}"
+        )

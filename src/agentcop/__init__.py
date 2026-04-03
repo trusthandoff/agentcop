@@ -1,8 +1,9 @@
-from .adapters import SentinelAdapter
+from .adapters import SentinelAdapter, validate_adapter
 from .event import SentinelEvent, ViolationRecord
 from .identity import (
     AgentIdentity,
     BehavioralBaseline,
+    DriftConfig,
     IdentityStore,
     InMemoryIdentityStore,
     SQLiteIdentityStore,
@@ -34,9 +35,11 @@ __all__ = [
     "detect_ai_generated_payload",
     # Adapter protocol
     "SentinelAdapter",
+    "validate_adapter",
     # Agent identity
     "AgentIdentity",
     "BehavioralBaseline",
+    "DriftConfig",
     "IdentityStore",
     "InMemoryIdentityStore",
     "SQLiteIdentityStore",

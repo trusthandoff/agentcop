@@ -38,6 +38,26 @@ from .event import SentinelEvent, ViolationRecord
 # Type alias for violation hooks in Sentinel
 ViolationHook = Callable[[ViolationRecord], list[ViolationRecord]]
 
+# Current SQLite schema version — bump when adding migrations below.
+_SCHEMA_VERSION = 1
+
+
+@dataclass
+class DriftConfig:
+    """Configurable thresholds for behavioral drift detection.
+
+    Pass to :meth:`AgentIdentity.register` or :class:`AgentIdentity.__init__` to
+    override the defaults::
+
+        identity = AgentIdentity.register(
+            agent_id="my-agent",
+            drift_config=DriftConfig(slow_execution_factor=5.0),
+        )
+    """
+
+    slow_execution_factor: float = 3.0
+    """Trigger ``slow_execution`` drift when ``exec_time > factor * baseline_avg``."""
+
 
 @dataclass
 class BehavioralBaseline:
@@ -110,31 +130,70 @@ class SQLiteIdentityStore(IdentityStore):
 
     def __init__(self, db_path: str | Path = "agentcop.db") -> None:
         self._path = Path(db_path)
-        self._conn = sqlite3.connect(str(self._path), check_same_thread=False)
+        # isolation_level=None → autocommit; we manage transactions explicitly
+        # with BEGIN EXCLUSIVE for atomic, cross-process-safe writes.
+        self._conn = sqlite3.connect(
+            str(self._path), check_same_thread=False, isolation_level=None, timeout=30
+        )
         self._lock = threading.Lock()
         self._init_db()
 
+    # ── Schema init & migrations ───────────────────────────────────────────
+
     def _init_db(self) -> None:
         with self._lock:
-            self._conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS identities (
-                    agent_id   TEXT PRIMARY KEY,
-                    data       TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+            self._conn.execute("BEGIN EXCLUSIVE")
+            try:
+                self._conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS schema_version (
+                        version INTEGER NOT NULL
+                    )
+                    """
                 )
-                """
-            )
-            self._conn.commit()
+                self._conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS identities (
+                        agent_id   TEXT PRIMARY KEY,
+                        data       TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+                cursor = self._conn.execute("SELECT version FROM schema_version")
+                row = cursor.fetchone()
+                if row is None:
+                    self._conn.execute(
+                        "INSERT INTO schema_version VALUES (?)", (_SCHEMA_VERSION,)
+                    )
+                else:
+                    self._migrate(row[0])
+                self._conn.execute("COMMIT")
+            except Exception:
+                self._conn.execute("ROLLBACK")
+                raise
+
+    def _migrate(self, from_version: int) -> None:
+        """Apply any pending schema migrations.  Called inside an open EXCLUSIVE transaction."""
+        # Template for future migrations:
+        # if from_version < 2:
+        #     self._conn.execute("ALTER TABLE identities ADD COLUMN tags TEXT")
+        #     self._conn.execute("UPDATE schema_version SET version = 2")
 
     def save(self, identity: AgentIdentity) -> None:
         data = json.dumps(identity.to_dict())
         with self._lock:
-            self._conn.execute(
-                "INSERT OR REPLACE INTO identities (agent_id, data, updated_at) VALUES (?, ?, ?)",
-                (identity.agent_id, data, datetime.now(UTC).isoformat()),
-            )
-            self._conn.commit()
+            self._conn.execute("BEGIN EXCLUSIVE")
+            try:
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO identities (agent_id, data, updated_at)"
+                    " VALUES (?, ?, ?)",
+                    (identity.agent_id, data, datetime.now(UTC).isoformat()),
+                )
+                self._conn.execute("COMMIT")
+            except Exception:
+                self._conn.execute("ROLLBACK")
+                raise
 
     def load(self, agent_id: str) -> AgentIdentity | None:
         with self._lock:
@@ -202,6 +261,7 @@ class AgentIdentity:
         status: Literal["active", "suspended", "flagged"] = "active",
         created_at: datetime | None = None,
         baseline: BehavioralBaseline | None = None,
+        drift_config: DriftConfig | None = None,
     ) -> None:
         self.agent_id = agent_id
         self.fingerprint = fingerprint
@@ -210,6 +270,7 @@ class AgentIdentity:
         self.trust_score = trust_score
         self.status: Literal["active", "suspended", "flagged"] = status
         self.baseline = baseline
+        self.drift_config: DriftConfig = drift_config or DriftConfig()
 
         self._lock = threading.Lock()
         self._store = store or InMemoryIdentityStore()
@@ -231,6 +292,7 @@ class AgentIdentity:
         *,
         trust_score: float = 50.0,
         status: Literal["active", "suspended", "flagged"] = "active",
+        drift_config: DriftConfig | None = None,
     ) -> AgentIdentity:
         """Create and persist a new agent identity.
 
@@ -241,6 +303,8 @@ class AgentIdentity:
             config: Extra config dict mixed into the fingerprint.
             metadata: Arbitrary key/value metadata stored alongside the identity.
             store: Storage backend.  Defaults to :class:`InMemoryIdentityStore`.
+            drift_config: Thresholds for behavioral drift detection.  Defaults to
+                          :class:`DriftConfig` with factory defaults.
 
         Returns:
             A new :class:`AgentIdentity` with ``trust_score=50`` and
@@ -255,6 +319,7 @@ class AgentIdentity:
             store=resolved_store,
             trust_score=trust_score,
             status=status,
+            drift_config=drift_config,
         )
         resolved_store.save(identity)
         return identity
@@ -279,7 +344,9 @@ class AgentIdentity:
                 except (OSError, TypeError):
                     h.update(repr(code).encode())
             elif isinstance(code, Path):
-                h.update(code.read_bytes())
+                # Read as UTF-8 source text so .py and .pyc paths both hash
+                # the human-readable source, not raw bytecode.
+                h.update(code.read_text(encoding="utf-8").encode())
             elif isinstance(code, str):
                 h.update(code.encode())
         if config is not None:
@@ -308,7 +375,10 @@ class AgentIdentity:
         self.trust_score = max(0.0, min(100.0, self.trust_score + delta))
 
     def record_execution(
-        self, execution_data: dict[str, Any] | None = None
+        self,
+        execution_data: dict[str, Any] | None = None,
+        *,
+        event_id: str = "",
     ) -> list[ViolationRecord]:
         """Record one successful execution and update trust score / baseline.
 
@@ -318,6 +388,10 @@ class AgentIdentity:
         - ``execution_time`` (``float``) — wall-clock seconds
         - ``output_size`` (``int``) — response size in bytes
         - ``agents_contacted`` (``list[str]``) — other agent IDs contacted
+
+        *event_id* is the :attr:`~agentcop.SentinelEvent.event_id` of the event that
+        triggered this execution recording.  When supplied, drift violations produced by
+        this call will link their ``source_event_id`` to that event.
 
         Returns any drift :class:`~agentcop.ViolationRecord` s detected (empty
         list until the baseline is established after 10 executions).
@@ -339,13 +413,13 @@ class AgentIdentity:
             if self._execution_count == 10:
                 self._build_baseline()
             elif self._execution_count > 10 and self.baseline is not None:
-                additional = self._check_drift(execution_data)
+                additional = self._check_drift(execution_data, event_id=event_id)
                 for _ in additional:
                     self._adjust_trust(-5.0)
 
             if self.trust_score < 30 and self.status == "active":
                 self.status = "flagged"
-                additional.append(self._make_flagged_violation())
+                additional.append(self._make_flagged_violation(event_id))
 
         return additional
 
@@ -390,15 +464,21 @@ class AgentIdentity:
 
             if self.trust_score < 30 and self.status == "active":
                 self.status = "flagged"
-                additional.append(self._make_flagged_violation())
+                additional.append(self._make_flagged_violation(violation.source_event_id))
 
         return additional
 
-    def _make_flagged_violation(self) -> ViolationRecord:
+    def _make_flagged_violation(self, triggering_event_id: str = "") -> ViolationRecord:
+        """Build the ``agent_flagged`` violation.
+
+        *triggering_event_id* is the ``source_event_id`` of the violation (or execution
+        event) that caused the trust score to drop below 30.  Falls back to a synthetic
+        ``identity-<agent_id>`` sentinel when no event ID is available.
+        """
         return ViolationRecord(
             violation_type="agent_flagged",
             severity="CRITICAL",
-            source_event_id=f"identity-{self.agent_id}",
+            source_event_id=triggering_event_id or f"identity-{self.agent_id}",
             detail={
                 "agent_id": self.agent_id,
                 "trust_score": self.trust_score,
@@ -439,8 +519,13 @@ class AgentIdentity:
 
     # ── Drift detection ───────────────────────────────────────────────────
 
-    def _check_drift(self, execution_data: dict[str, Any]) -> list[ViolationRecord]:
+    def _check_drift(
+        self, execution_data: dict[str, Any], *, event_id: str = ""
+    ) -> list[ViolationRecord]:
         """Return drift violations for *execution_data* vs current baseline.
+
+        *event_id* is propagated to each ``ViolationRecord.source_event_id`` so
+        violations link back to the specific event that triggered the check.
 
         Must be called under ``self._lock``.
         """
@@ -449,6 +534,7 @@ class AgentIdentity:
 
         violations: list[ViolationRecord] = []
         baseline = self.baseline
+        source_id = event_id or f"identity-{self.agent_id}"
 
         for tool in execution_data.get("tools_called", []):
             if tool not in baseline.tools_called:
@@ -456,7 +542,7 @@ class AgentIdentity:
                     ViolationRecord(
                         violation_type="identity_drift",
                         severity="WARN",
-                        source_event_id=f"identity-{self.agent_id}",
+                        source_event_id=source_id,
                         detail={
                             "agent_id": self.agent_id,
                             "drift_type": "new_tool",
@@ -469,13 +555,13 @@ class AgentIdentity:
         if (
             exec_time is not None
             and baseline.avg_execution_time is not None
-            and exec_time > 3 * baseline.avg_execution_time
+            and exec_time > self.drift_config.slow_execution_factor * baseline.avg_execution_time
         ):
             violations.append(
                 ViolationRecord(
                     violation_type="identity_drift",
                     severity="WARN",
-                    source_event_id=f"identity-{self.agent_id}",
+                    source_event_id=source_id,
                     detail={
                         "agent_id": self.agent_id,
                         "drift_type": "slow_execution",
@@ -491,7 +577,7 @@ class AgentIdentity:
                     ViolationRecord(
                         violation_type="identity_drift",
                         severity="WARN",
-                        source_event_id=f"identity-{self.agent_id}",
+                        source_event_id=source_id,
                         detail={
                             "agent_id": self.agent_id,
                             "drift_type": "new_agent_contact",
@@ -524,6 +610,7 @@ class AgentIdentity:
                 if identity.baseline is None:
                     return None
                 baseline = identity.baseline
+                factor = identity.drift_config.slow_execution_factor
 
             for tool in event.attributes.get("tools_called", []):
                 if tool not in baseline.tools_called:
@@ -543,7 +630,7 @@ class AgentIdentity:
             if (
                 exec_time is not None
                 and baseline.avg_execution_time is not None
-                and exec_time > 3 * baseline.avg_execution_time
+                and exec_time > factor * baseline.avg_execution_time
             ):
                 return ViolationRecord(
                     violation_type="identity_drift",

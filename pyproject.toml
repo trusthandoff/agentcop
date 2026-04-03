@@ -67,6 +67,9 @@ langsmith = [
 ddtrace = [
     "ddtrace>=1.0",
 ]
+watchdog = [
+    "watchdog>=3.0",
+]
 dev = [
     "pytest",
 ]

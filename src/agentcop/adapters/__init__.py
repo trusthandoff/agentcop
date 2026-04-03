@@ -1,3 +1,3 @@
-from .base import SentinelAdapter
+from .base import SentinelAdapter, validate_adapter
 
-__all__ = ["SentinelAdapter"]
+__all__ = ["SentinelAdapter", "validate_adapter"]

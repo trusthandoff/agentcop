@@ -198,6 +198,21 @@ def _build_sentinel(identity: AgentIdentity | None = None) -> Sentinel:
     return sentinel
 
 
+def _append_event(events_file: Path, line: str) -> None:
+    """Append one JSONL line to the events file with an exclusive cross-process lock.
+
+    Uses ``fcntl.flock`` on Unix for atomic multi-process writes.  Silently
+    skips locking on Windows (no ``fcntl``) — the race is acceptable there.
+    """
+    with events_file.open("a") as fh:
+        try:
+            import fcntl
+            fcntl.flock(fh, fcntl.LOCK_EX)
+        except ImportError:
+            pass  # Windows — accept the edge case
+        fh.write(line + "\n")
+
+
 def _make_event(event_type: str, body: str, trace_id: str | None = None) -> SentinelEvent:
     return SentinelEvent(
         event_id=str(uuid.uuid4()),
@@ -339,8 +354,7 @@ def cmd_taint_check(args: list[str]) -> None:
 
     # Persist only tainted events to avoid unbounded log growth
     if hits:
-        with _EVENTS_FILE.open("a") as fh:
-            fh.write(event.model_dump_json() + "\n")
+        _append_event(_EVENTS_FILE, event.model_dump_json())
 
 
 def cmd_output_check(args: list[str]) -> None:
@@ -359,8 +373,7 @@ def cmd_output_check(args: list[str]) -> None:
     print(json.dumps(result))
 
     if hits:
-        with _EVENTS_FILE.open("a") as fh:
-            fh.write(event.model_dump_json() + "\n")
+        _append_event(_EVENTS_FILE, event.model_dump_json())
 
 
 # ---------------------------------------------------------------------------

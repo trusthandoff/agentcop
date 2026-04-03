@@ -205,8 +205,13 @@ class SQLiteIdentityStore(IdentityStore):
 
     def delete(self, agent_id: str) -> None:
         with self._lock:
-            self._conn.execute("DELETE FROM identities WHERE agent_id = ?", (agent_id,))
-            self._conn.commit()
+            self._conn.execute("BEGIN EXCLUSIVE")
+            try:
+                self._conn.execute("DELETE FROM identities WHERE agent_id = ?", (agent_id,))
+                self._conn.execute("COMMIT")
+            except Exception:
+                self._conn.execute("ROLLBACK")
+                raise
 
     def list_agents(self) -> list[str]:
         with self._lock:
@@ -462,8 +467,12 @@ class AgentIdentity:
                 self.status = "flagged"
                 additional.append(self._make_flagged_violation(violation.source_event_id))
 
-        # Auto-revoke any active badge when trust drops below threshold
-        if self.trust_score < 30 and self._badge_store is not None:
+            # Snapshot inside the lock to avoid TOCTOU on trust_score / _badge_store
+            _should_revoke = self.trust_score < 30 and self._badge_store is not None
+
+        # Auto-revoke any active badge when trust drops below threshold.
+        # _revoke_active_badge must NOT hold self._lock (badge store may acquire its own lock).
+        if _should_revoke:
             self._revoke_active_badge("trust_below_30")
 
         return additional

@@ -301,7 +301,6 @@ class Sentinel:
         _parser: Callable[[str], SentinelEvent | None] = parser or (
             lambda line: SentinelEvent.model_validate_json(line)
         )
-        stop_event = threading.Event()
 
         # Shared mutable state: position in file (bytes read so far).
         state = {"pos": _path.stat().st_size if _path.exists() else 0}
@@ -337,21 +336,22 @@ class Sentinel:
         # so the on_violation callback is dispatched consistently.
         poll_handle = self.watch(on_violation, poll_interval=0.1)
 
-        def _stop() -> None:
+        # stop_event drives a real monitor thread that tears down both the
+        # observer and the poll handle when WatchHandle.stop() is called.
+        stop_event = threading.Event()
+
+        def _run_until_stopped() -> None:
+            stop_event.wait()
             poll_handle.stop()
             observer.stop()
             observer.join()
 
-        stop_thread = threading.Thread(target=lambda: None, daemon=True)
+        stop_thread = threading.Thread(
+            target=_run_until_stopped, daemon=True, name="agentcop-file-watch"
+        )
         stop_thread.start()
 
-        # Return a WatchHandle whose stop() tears down both the observer and the
-        # polling watch loop.
-        class _FileWatchHandle(WatchHandle):
-            def stop(self) -> None:  # type: ignore[override]
-                _stop()
-
-        return _FileWatchHandle(stop_thread, stop_event)
+        return WatchHandle(stop_thread, stop_event)
 
     def report(self) -> None:
         violations = self.detect_violations()

@@ -77,6 +77,16 @@ def to_otel_attributes(event: SentinelEvent) -> dict:
     return attrs
 
 
+def _hex_to_int(value: str | None, expected_len: int) -> int:
+    """Convert a fixed-length hex string to int, returning 0 on any error."""
+    if not value or len(value) != expected_len:
+        return 0
+    try:
+        return int(value, 16)
+    except ValueError:
+        return 0
+
+
 def to_otel_log_record(event: SentinelEvent):
     """
     Convert a SentinelEvent to an opentelemetry.sdk._logs.LogRecord.
@@ -100,8 +110,8 @@ def to_otel_log_record(event: SentinelEvent):
         severity_number=severity_number,
         body=event.body,
         attributes=to_otel_attributes(event),
-        trace_id=int(event.trace_id, 16) if event.trace_id and len(event.trace_id) == 32 else 0,
-        span_id=int(event.span_id, 16) if event.span_id and len(event.span_id) == 16 else 0,
+        trace_id=_hex_to_int(event.trace_id, 32),
+        span_id=_hex_to_int(event.span_id, 16),
     )
 
 

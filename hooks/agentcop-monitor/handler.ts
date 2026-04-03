@@ -109,9 +109,10 @@ async function runSkill(subcmd: string, text: string): Promise<CheckResult | nul
 // ---------------------------------------------------------------------------
 
 async function getBadgeUrl(): Promise<string | null> {
+  if (!PYTHON_BIN) return null;
   try {
     const { stdout } = await execFileAsync(
-      PYTHON_BIN!,
+      PYTHON_BIN,
       [SKILL_PY, "badge", "status"],
       { timeout: TIMEOUT_MS, env: { ...process.env } },
     );
@@ -151,9 +152,14 @@ async function handleBadgeCommand(event: OpenClawEvent): Promise<boolean> {
   const body = (event.context.bodyForAgent ?? event.context.content ?? "").trim();
   if (body !== "/security badge") return false;
 
+  if (!PYTHON_BIN) {
+    event.messages.push("⚠️ **AgentCop**: Python not found — badge unavailable");
+    return true;
+  }
+
   try {
     const { stdout } = await execFileAsync(
-      PYTHON_BIN!,
+      PYTHON_BIN,
       [SKILL_PY, "badge", "generate"],
       { timeout: TIMEOUT_MS * 2, env: { ...process.env } },
     );

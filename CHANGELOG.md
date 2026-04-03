@@ -11,6 +11,56 @@ agentcop uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.4.5] — 2026-04-03
+
+### Added
+
+- **Moltbook adapter** (`agentcop[moltbook]`) — `MoltbookSentinelAdapter` for
+  AI agents operating on the Moltbook social network. Performs taint analysis on
+  every `post_received` and `mention_received` event using 13+ injection
+  patterns (direct overrides, role injection, credential theft triggers,
+  exfiltration keywords, and encoding-bypass variants: base64, unicode
+  zero-width chars, right-to-left override). Translates 14 raw Moltbook event
+  types into `SentinelEvent` objects with a `moltbook.*` OTel attribute
+  namespace. Buffered drift events: `moltbook_submolt_drift`,
+  `moltbook_agent_spike` (≥5 consecutive posts from unknown agents — the
+  pattern from the January 2026 breach), `moltbook_reply_hijack`,
+  `moltbook_exfiltration_attempt` (novel external URL in outbound post),
+  `moltbook_verified_peer`. `flush_into(sentinel)` drains buffered events into
+  a live `Sentinel`.
+
+- **Badge integration on Moltbook** — `MoltbookSentinelAdapter.setup()` calls
+  `AgentIdentity.register()` and issues an Ed25519-signed `AgentBadge`
+  (SECURED / MONITORED / AT RISK). The `badge_id` is stored on the adapter and
+  automatically included in the `moltbook.badge_id` attribute of every
+  `post_created` event, so peer agents and humans on the platform can read and
+  verify the agent's security posture. Badge URL: `agentcop.live/badge/{id}`.
+
+- **Skill badge verification** — every `skill_executed` event is automatically
+  checked against the skill's ClawHub manifest badge metadata. Events are
+  re-classified to `skill_executed_unverified` (WARN) when no badge is present
+  or `skill_executed_at_risk` (CRITICAL) when the badge tier is AT RISK.
+  Verified SECURED/MONITORED skills pass through as `skill_executed` (INFO).
+
+- **`docs/adapters/moltbook.md`** — full integration guide: January 2026 breach
+  context, manual mode and SDK mode quickstarts, badge setup walkthrough, skill
+  badge verification table, 5 detector recipes (prompt injection in feed,
+  coordinated campaign, unverified skill, behavioral drift post-infection, API
+  key exfiltration), injection pattern reference table with 13 patterns, badge
+  verification REST API reference, full `MoltbookSentinelAdapter` API reference
+  with event type mapping and OTel attribute namespace.
+
+### Fixed
+
+- 8 audit fixes across adapters and detectors (edge-case handling for missing
+  fields, malformed timestamps, empty attribute dicts).
+
+### Tests
+
+- 1574 tests passing across the full suite.
+
+---
+
 ## [0.4.4] — 2026-04-03
 
 ### Added
@@ -172,7 +222,8 @@ agentcop uses [Semantic Versioning](https://semver.org/).
 - `DEFAULT_DETECTORS` list.
 - Optional OTel export via `agentcop[otel]`.
 
-[Unreleased]: https://github.com/trusthandoff/agentcop/compare/v0.4.4...HEAD
+[Unreleased]: https://github.com/trusthandoff/agentcop/compare/v0.4.5...HEAD
+[0.4.5]: https://github.com/trusthandoff/agentcop/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/trusthandoff/agentcop/compare/v0.2.0...v0.4.4
 [0.2.0]: https://github.com/trusthandoff/agentcop/compare/v0.1.9...v0.2.0
 [0.1.9]: https://github.com/trusthandoff/agentcop/compare/v0.1.8...v0.1.9

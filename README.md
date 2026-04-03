@@ -13,9 +13,10 @@ OTel-aligned schema. Pluggable detectors. Adapter bridge to your stack. Zero req
 
 **Features:**
 - Universal `SentinelEvent` schema (OTel-aligned) + pluggable `ViolationDetector` functions
-- Nine framework adapters (LangGraph, LangSmith, Langfuse, Datadog, Haystack, Semantic Kernel, LlamaIndex, CrewAI, AutoGen)
+- Ten framework adapters (LangGraph, LangSmith, Langfuse, Datadog, Haystack, Semantic Kernel, LlamaIndex, CrewAI, AutoGen, Moltbook)
 - `AgentIdentity` — verifiable fingerprint, behavioral baseline, trust scoring, and drift detection (KYA — Know Your Agent)
 - Ed25519-signed `AgentBadge` system — tiered SECURED / MONITORED / AT RISK certificates for README display and cross-agent verification
+- **Moltbook adapter** — purpose-built monitoring for AI agents on the Moltbook social network: prompt-injection taint analysis on every received post, coordinated campaign detection, skill badge verification (LLM05), API key exfiltration detection (LLM06), and Ed25519 badge integration for agent profiles
 - OpenClaw integration — `/security` skill commands + `agentcop-monitor` hook for real-time LLM01/LLM02 detection in Telegram, WhatsApp, Discord, and more
 - Optional OTel export via `agentcop[otel]`
 
@@ -27,7 +28,7 @@ pip install agentcop
 
 ## Adapters
 
-Nine adapters are available — install only what you need:
+Ten adapters are available — install only what you need:
 
 | Adapter | Framework | Install |
 |---|---|---|
@@ -40,6 +41,7 @@ Nine adapters are available — install only what you need:
 | [LlamaIndex](docs/adapters/llamaindex.md) | LlamaIndex pipeline events | `pip install agentcop[llamaindex]` |
 | [CrewAI](docs/adapters/crewai.md) | CrewAI agent & task events | `pip install agentcop[crewai]` |
 | [AutoGen](docs/adapters/autogen.md) | AutoGen agent messages | `pip install agentcop[autogen]` |
+| [Moltbook](docs/adapters/moltbook.md) | Moltbook social network agents | `pip install agentcop[moltbook]` |
 
 ---
 
@@ -330,6 +332,55 @@ Example README badge:
 ```markdown
 ![AgentCop SECURED](https://agentcop.live/badge/abc123/shield)
 ```
+
+---
+
+## Moltbook integration
+
+Moltbook is a social network where AI agents read each other's posts and act on them — the most active prompt-injection attack surface in the current multi-agent ecosystem. The January 2026 breach exposed 1.5 M API keys via commands injected into the public feed. `agentcop` catches it.
+
+```
+pip install agentcop[moltbook]
+```
+
+The adapter performs taint analysis on every received post and mention, detects coordinated injection campaigns, verifies skill badges before execution, and issues an Ed25519-signed security badge for your agent's Moltbook profile.
+
+**Quickstart:**
+
+```python
+from moltbook import MoltbookClient
+from agentcop import Sentinel
+from agentcop.adapters.moltbook import MoltbookSentinelAdapter
+
+client = MoltbookClient(api_key="...")
+adapter = MoltbookSentinelAdapter(agent_id="my-bot")
+
+# Generates an Ed25519 badge + registers event listeners on the client
+adapter.setup(client=client)
+
+# Run your agent — events flow automatically into the adapter buffer
+client.run()
+
+# Analyze
+sentinel = Sentinel()
+adapter.flush_into(sentinel)
+violations = sentinel.detect_violations()
+sentinel.report()
+```
+
+**Badge integration:** calling `setup()` issues a cryptographically signed `AgentBadge` and embeds it in every outbound `post_created` event so peer agents can verify your security posture:
+
+```python
+adapter.setup()
+print(f"Badge: https://agentcop.live/badge/{adapter._badge_id}")
+# Badge: https://agentcop.live/badge/abc123
+```
+
+**Skill badge verification:** every `skill_executed` event is automatically checked against the skill's ClawHub manifest badge. Unverified skills emit `skill_executed_unverified` (WARN); AT RISK skills emit `skill_executed_at_risk` (CRITICAL).
+
+**Injection detection:** the adapter checks received posts for 13+ injection patterns including direct overrides, role injection, credential theft, exfiltration triggers, and encoding bypass variants (base64, unicode zero-width, right-to-left override).
+
+See [docs/adapters/moltbook.md](docs/adapters/moltbook.md) for the full integration guide, 5 detector recipes, and API reference.
 
 ---
 

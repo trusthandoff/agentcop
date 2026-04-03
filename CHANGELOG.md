@@ -11,6 +11,47 @@ agentcop uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.4.4] — 2026-04-03
+
+### Added
+
+- **Ed25519 badge system** (`agentcop[badge]`) — `AgentBadge` Pydantic model,
+  `BadgeIssuer` (Ed25519 sign + verify), `BadgeStore` / `InMemoryBadgeStore` /
+  `SQLiteBadgeStore`, `generate_svg()`, `generate_badge_card()`,
+  `generate_markdown()`, `tier_from_score()`. Badges are 30-day signed
+  certificates with three tiers: SECURED (≥ 80), MONITORED (50–79), AT RISK
+  (< 50). Auto-revocation triggers when trust score drops below 30.
+
+- **`AgentIdentity` — Know Your Agent (KYA)** — verifiable agent fingerprint
+  (Ed25519 hash of agent source), behavioral baseline built from the first 10+
+  executions, trust score (starts 70, ±20/10/5 per violation severity, +1 per
+  clean run), and drift detection for new tools, slow execution, and new agent
+  contacts. Exported as `AgentIdentity`, `BehavioralBaseline`, `DriftConfig`,
+  `IdentityStore`, `InMemoryIdentityStore`, `SQLiteIdentityStore` from the top-
+  level `agentcop` package. `Sentinel.attach_identity()` auto-enriches all
+  ingested events with identity metadata and trust score.
+
+- **OpenClaw `agentcop` skill** (`skills/agentcop/`) — Python skill bridge
+  (`skill.py`) for the OpenClaw agent platform. Subcommands: `status`, `report`,
+  `scan`, `taint-check`, `output-check`, and the full `badge` lifecycle
+  (`generate`, `verify`, `renew`, `revoke`, `shield`, `markdown`, `status`).
+  Auto-installs `agentcop` via pip on first run. State persisted in
+  `~/.openclaw/agentcop/` via `SQLiteIdentityStore`.
+
+- **OpenClaw `agentcop-monitor` hook** (`hooks/agentcop-monitor/`) — TypeScript
+  hook that fires on `message:received`, `message:sent`, and
+  `tool_result_persist`. Taint-checks inbound messages for LLM01 prompt
+  injection and outbound content for LLM02 insecure output patterns. Violation
+  alerts are pushed onto `event.messages` so they appear in the user's active
+  channel (Telegram, WhatsApp, Discord, etc.) before the agent processes the
+  message. Text is passed via stdin to avoid OS ARG_MAX limits.
+
+- **`docs/guides/openclaw.md`** — complete integration guide: install skill,
+  enable hook, badge commands, example violation alerts in Telegram and
+  WhatsApp, configuration reference, state file layout, and troubleshooting.
+
+---
+
 ## [0.2.0] — 2026-04-01
 
 ### Added
@@ -131,7 +172,8 @@ agentcop uses [Semantic Versioning](https://semver.org/).
 - `DEFAULT_DETECTORS` list.
 - Optional OTel export via `agentcop[otel]`.
 
-[Unreleased]: https://github.com/trusthandoff/agentcop/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/trusthandoff/agentcop/compare/v0.4.4...HEAD
+[0.4.4]: https://github.com/trusthandoff/agentcop/compare/v0.2.0...v0.4.4
 [0.2.0]: https://github.com/trusthandoff/agentcop/compare/v0.1.9...v0.2.0
 [0.1.9]: https://github.com/trusthandoff/agentcop/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/trusthandoff/agentcop/compare/v0.1.7...v0.1.8

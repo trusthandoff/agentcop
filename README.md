@@ -11,6 +11,14 @@ Every agent fleet needs a cop. Agents delegate, handoff, and execute — and wit
 
 OTel-aligned schema. Pluggable detectors. Adapter bridge to your stack. Zero required infrastructure.
 
+**Features:**
+- Universal `SentinelEvent` schema (OTel-aligned) + pluggable `ViolationDetector` functions
+- Nine framework adapters (LangGraph, LangSmith, Langfuse, Datadog, Haystack, Semantic Kernel, LlamaIndex, CrewAI, AutoGen)
+- `AgentIdentity` — verifiable fingerprint, behavioral baseline, trust scoring, and drift detection (KYA — Know Your Agent)
+- Ed25519-signed `AgentBadge` system — tiered SECURED / MONITORED / AT RISK certificates for README display and cross-agent verification
+- OpenClaw integration — `/security` skill commands + `agentcop-monitor` hook for real-time LLM01/LLM02 detection in Telegram, WhatsApp, Discord, and more
+- Optional OTel export via `agentcop[otel]`
+
 ```
 pip install agentcop
 ```
@@ -247,6 +255,114 @@ exporter.export(events)
 ```
 
 Attributes are emitted under the `sentinel.*` namespace. `trace_id` and `span_id` are mapped to OTel trace context.
+
+---
+
+## AgentIdentity — Know Your Agent
+
+`AgentIdentity` gives every agent a verifiable fingerprint, a behavioral baseline, and a living trust score. Attach it to `Sentinel` to auto-enrich events and get drift alerts.
+
+```python
+from agentcop import Sentinel, AgentIdentity, SQLiteIdentityStore
+
+store = SQLiteIdentityStore("agentcop.db")
+identity = AgentIdentity.register(
+    agent_id="my-agent-v1",
+    code=agent_function,           # source hashed to Ed25519 fingerprint
+    metadata={"framework": "langgraph", "version": "1.0"},
+    store=store,
+)
+
+sentinel = Sentinel()
+sentinel.attach_identity(identity)
+# Events ingested via sentinel.push() are now enriched with agent identity + trust score.
+```
+
+Trust score starts at 70 and rises with clean executions. Critical violations deduct 20 points; errors 10; warnings 5. The baseline is built automatically from the first 10+ executions and used to detect drift (new tools, slow execution, new agent contacts).
+
+---
+
+## Agent badges
+
+`agentcop[badge]` issues Ed25519-signed, publicly verifiable security certificates. Like SSL for websites — but for agents.
+
+```
+pip install agentcop[badge]
+```
+
+```python
+from agentcop.badge import BadgeIssuer, SQLiteBadgeStore, generate_svg, generate_markdown
+
+store = SQLiteBadgeStore("agentcop.db")
+issuer = BadgeIssuer(store=store)
+
+badge = issuer.issue(
+    agent_id="my-agent",
+    fingerprint=identity.fingerprint,
+    trust_score=87.0,
+    violations={"critical": 0, "warning": 1, "info": 0, "protected": 3},
+    framework="langgraph",
+    scan_count=42,
+)
+
+assert issuer.verify(badge)   # Ed25519 signature check
+
+# SVG for embedding in HTML
+svg = generate_svg(badge)
+
+# Markdown snippet for README
+print(generate_markdown(badge))
+# ![AgentCop SECURED](https://agentcop.live/badge/<id>/shield)
+```
+
+Badge tiers are determined by trust score:
+
+| Tier | Score | Color |
+|---|---|---|
+| 🟢 SECURED | ≥ 80 | `#00ff88` |
+| 🟡 MONITORED | 50–79 | `#ffaa00` |
+| 🔴 AT RISK | < 50 | `#ff3333` |
+
+Badges expire after 30 days. A badge is auto-revoked if the trust score drops below 30.
+
+Example README badge:
+
+```markdown
+![AgentCop SECURED](https://agentcop.live/badge/abc123/shield)
+```
+
+---
+
+## OpenClaw integration
+
+`agentcop` ships a native [OpenClaw](https://openclaw.dev) integration: a skill for on-demand security commands and a hook for automatic real-time monitoring.
+
+```bash
+openclaw skills install agentcop
+openclaw hooks enable agentcop-monitor
+```
+
+The **`agentcop-monitor` hook** fires on every message and tool result, taint-checking for LLM01 (prompt injection) and LLM02 (insecure output). Violation alerts are delivered to your active channel before the agent sees or sends the message.
+
+Example alert in Telegram:
+
+```
+🚨 AgentCop [CRITICAL] — LLM01 LLM01_prompt_injection
+Matched: `ignore previous instructions`, `you are now`
+Context: inbound message
+Badge: https://agentcop.live/badge/abc123/verify
+```
+
+The **`agentcop` skill** adds `/security` commands:
+
+```
+/security status     — agent fingerprint, trust score, violation count
+/security report     — full violation report grouped by severity
+/security scan       — OWASP LLM Top 10 assessment
+/security badge      — generate or display the agent's security badge
+```
+
+See [docs/guides/openclaw.md](docs/guides/openclaw.md) for the full integration guide.
 
 ---
 

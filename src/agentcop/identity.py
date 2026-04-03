@@ -163,9 +163,7 @@ class SQLiteIdentityStore(IdentityStore):
                 cursor = self._conn.execute("SELECT version FROM schema_version")
                 row = cursor.fetchone()
                 if row is None:
-                    self._conn.execute(
-                        "INSERT INTO schema_version VALUES (?)", (_SCHEMA_VERSION,)
-                    )
+                    self._conn.execute("INSERT INTO schema_version VALUES (?)", (_SCHEMA_VERSION,))
                 else:
                     self._migrate(row[0])
                 self._conn.execute("COMMIT")
@@ -207,9 +205,7 @@ class SQLiteIdentityStore(IdentityStore):
 
     def delete(self, agent_id: str) -> None:
         with self._lock:
-            self._conn.execute(
-                "DELETE FROM identities WHERE agent_id = ?", (agent_id,)
-            )
+            self._conn.execute("DELETE FROM identities WHERE agent_id = ?", (agent_id,))
             self._conn.commit()
 
     def list_agents(self) -> list[str]:
@@ -454,9 +450,7 @@ class AgentIdentity:
                 delta = -20.0
 
             vtype = violation.violation_type
-            self._violation_type_counts[vtype] = (
-                self._violation_type_counts.get(vtype, 0) + 1
-            )
+            self._violation_type_counts[vtype] = self._violation_type_counts.get(vtype, 0) + 1
             if self._violation_type_counts[vtype] > 1:
                 delta -= 10.0  # repeated-violation extra penalty
 

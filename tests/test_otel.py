@@ -7,14 +7,12 @@ Integration tests for agentcop.otel:
 
 import sys
 from datetime import UTC, datetime
-from types import ModuleType
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from agentcop.event import SentinelEvent
 from agentcop.otel import to_otel_attributes
-
 
 # ---------------------------------------------------------------------------
 # Helpers

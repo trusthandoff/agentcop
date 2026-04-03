@@ -131,9 +131,7 @@ class TestRegistration:
         assert loaded is identity
 
     def test_metadata_stored(self):
-        identity = AgentIdentity.register(
-            agent_id="a", metadata={"framework": "langgraph"}
-        )
+        identity = AgentIdentity.register(agent_id="a", metadata={"framework": "langgraph"})
         assert identity.metadata["framework"] == "langgraph"
 
     def test_created_at_is_utc(self):
@@ -167,33 +165,25 @@ class TestTrustScore:
 
     def test_warn_violation_decrements_5(self):
         identity = AgentIdentity.register(agent_id="a")
-        v = ViolationRecord(
-            violation_type="x", severity="WARN", source_event_id="e1"
-        )
+        v = ViolationRecord(violation_type="x", severity="WARN", source_event_id="e1")
         identity.observe_violation(v)
         assert identity.trust_score == 45.0
 
     def test_error_violation_decrements_10(self):
         identity = AgentIdentity.register(agent_id="a")
-        v = ViolationRecord(
-            violation_type="x", severity="ERROR", source_event_id="e1"
-        )
+        v = ViolationRecord(violation_type="x", severity="ERROR", source_event_id="e1")
         identity.observe_violation(v)
         assert identity.trust_score == 40.0
 
     def test_critical_violation_decrements_20(self):
         identity = AgentIdentity.register(agent_id="a")
-        v = ViolationRecord(
-            violation_type="x", severity="CRITICAL", source_event_id="e1"
-        )
+        v = ViolationRecord(violation_type="x", severity="CRITICAL", source_event_id="e1")
         identity.observe_violation(v)
         assert identity.trust_score == 30.0
 
     def test_repeat_violation_adds_10_extra_penalty(self):
         identity = AgentIdentity.register(agent_id="a")
-        v = ViolationRecord(
-            violation_type="same_type", severity="WARN", source_event_id="e1"
-        )
+        v = ViolationRecord(violation_type="same_type", severity="WARN", source_event_id="e1")
         identity.observe_violation(v)  # first: -5 → 45
         assert identity.trust_score == 45.0
         identity.observe_violation(v)  # second: -5 -10 = -15 → 30
@@ -215,9 +205,7 @@ class TestTrustScore:
 
     def test_trust_clamped_at_0(self):
         identity = AgentIdentity.register(agent_id="a", trust_score=5.0)
-        v = ViolationRecord(
-            violation_type="x", severity="CRITICAL", source_event_id="e1"
-        )
+        v = ViolationRecord(violation_type="x", severity="CRITICAL", source_event_id="e1")
         identity.observe_violation(v)
         assert identity.trust_score == 0.0
 
@@ -225,9 +213,7 @@ class TestTrustScore:
         identity = AgentIdentity.register(agent_id="a")
         identity.record_execution()
         assert identity._consecutive_clean == 1
-        v = ViolationRecord(
-            violation_type="x", severity="WARN", source_event_id="e1"
-        )
+        v = ViolationRecord(violation_type="x", severity="WARN", source_event_id="e1")
         identity.observe_violation(v)
         assert identity._consecutive_clean == 0
 
@@ -240,18 +226,14 @@ class TestTrustScore:
 class TestAutoFlagging:
     def test_auto_flag_when_trust_below_30_from_violations(self):
         identity = AgentIdentity.register(agent_id="a", trust_score=31.0)
-        v = ViolationRecord(
-            violation_type="x", severity="CRITICAL", source_event_id="e1"
-        )
+        v = ViolationRecord(violation_type="x", severity="CRITICAL", source_event_id="e1")
         extras = identity.observe_violation(v)
         assert identity.status == "flagged"
         assert any(e.violation_type == "agent_flagged" for e in extras)
 
     def test_agent_flagged_severity_is_critical(self):
         identity = AgentIdentity.register(agent_id="a", trust_score=31.0)
-        v = ViolationRecord(
-            violation_type="x", severity="CRITICAL", source_event_id="e1"
-        )
+        v = ViolationRecord(violation_type="x", severity="CRITICAL", source_event_id="e1")
         extras = identity.observe_violation(v)
         flagged = next(e for e in extras if e.violation_type == "agent_flagged")
         assert flagged.severity == "CRITICAL"
@@ -268,9 +250,7 @@ class TestAutoFlagging:
 
     def test_already_flagged_does_not_emit_second_time(self):
         identity = AgentIdentity.register(agent_id="a", trust_score=25.0, status="flagged")
-        v = ViolationRecord(
-            violation_type="x", severity="WARN", source_event_id="e1"
-        )
+        v = ViolationRecord(violation_type="x", severity="WARN", source_event_id="e1")
         extras = identity.observe_violation(v)
         # already flagged — no new agent_flagged record
         assert not any(e.violation_type == "agent_flagged" for e in extras)
@@ -378,8 +358,7 @@ class TestDriftDetection:
         identity = _make_baseline_identity(avg_time=1.0)
         violations = identity.record_execution({"execution_time": 4.0})  # 4x > 3x
         assert any(
-            v.violation_type == "identity_drift"
-            and v.detail["drift_type"] == "slow_execution"
+            v.violation_type == "identity_drift" and v.detail["drift_type"] == "slow_execution"
             for v in violations
         )
 
@@ -387,8 +366,7 @@ class TestDriftDetection:
         identity = _make_baseline_identity(avg_time=1.0)
         violations = identity.record_execution({"execution_time": 2.5})  # 2.5x < 3x
         assert not any(
-            v.violation_type == "identity_drift"
-            and v.detail["drift_type"] == "slow_execution"
+            v.violation_type == "identity_drift" and v.detail["drift_type"] == "slow_execution"
             for v in violations
         )
 
@@ -396,8 +374,7 @@ class TestDriftDetection:
         identity = _make_baseline_identity()
         violations = identity.record_execution({"agents_contacted": ["completely-new"]})
         assert any(
-            v.violation_type == "identity_drift"
-            and v.detail["drift_type"] == "new_agent_contact"
+            v.violation_type == "identity_drift" and v.detail["drift_type"] == "new_agent_contact"
             for v in violations
         )
 
@@ -440,9 +417,7 @@ class TestMakeDriftDetector:
     def test_detector_fires_on_new_tool(self):
         identity = _make_baseline_identity(tools=["tool_a"])
         detect = identity.make_drift_detector()
-        event = _event(
-            attributes={"agent_id": "test-agent", "tools_called": ["unseen_tool"]}
-        )
+        event = _event(attributes={"agent_id": "test-agent", "tools_called": ["unseen_tool"]})
         result = detect(event)
         assert result is not None
         assert result.violation_type == "identity_drift"
@@ -457,9 +432,7 @@ class TestMakeDriftDetector:
     def test_detector_fires_on_slow_execution(self):
         identity = _make_baseline_identity(avg_time=1.0)
         detect = identity.make_drift_detector()
-        event = _event(
-            attributes={"agent_id": "test-agent", "execution_time": 10.0}
-        )
+        event = _event(attributes={"agent_id": "test-agent", "execution_time": 10.0})
         result = detect(event)
         assert result is not None
         assert result.detail["drift_type"] == "slow_execution"
@@ -467,9 +440,7 @@ class TestMakeDriftDetector:
     def test_detector_fires_on_new_agent_contact(self):
         identity = _make_baseline_identity()
         detect = identity.make_drift_detector()
-        event = _event(
-            attributes={"agent_id": "test-agent", "agents_contacted": ["brand-new"]}
-        )
+        event = _event(attributes={"agent_id": "test-agent", "agents_contacted": ["brand-new"]})
         result = detect(event)
         assert result is not None
         assert result.detail["drift_type"] == "new_agent_contact"
@@ -477,9 +448,7 @@ class TestMakeDriftDetector:
     def test_detector_preserves_trace_id(self):
         identity = _make_baseline_identity(tools=["tool_a"])
         detect = identity.make_drift_detector()
-        event = _event(
-            attributes={"agent_id": "test-agent", "tools_called": ["new"]}
-        )
+        event = _event(attributes={"agent_id": "test-agent", "tools_called": ["new"]})
         event = event.model_copy(update={"trace_id": "trace-xyz"})
         result = detect(event)
         assert result is not None
@@ -493,9 +462,7 @@ class TestMakeDriftDetector:
 
 class TestSerialization:
     def test_to_dict_round_trips_basic_fields(self):
-        identity = AgentIdentity.register(
-            agent_id="a", code="def fn(): pass", metadata={"k": "v"}
-        )
+        identity = AgentIdentity.register(agent_id="a", code="def fn(): pass", metadata={"k": "v"})
         d = identity.to_dict()
         restored = AgentIdentity.from_dict(d)
         assert restored.agent_id == identity.agent_id
@@ -528,9 +495,7 @@ class TestSerialization:
 
     def test_from_dict_restores_violation_type_counts(self):
         identity = AgentIdentity.register(agent_id="a")
-        v = ViolationRecord(
-            violation_type="test_type", severity="WARN", source_event_id="e1"
-        )
+        v = ViolationRecord(violation_type="test_type", severity="WARN", source_event_id="e1")
         identity.observe_violation(v)
         d = identity.to_dict()
         restored = AgentIdentity.from_dict(d)
@@ -583,9 +548,7 @@ class TestSQLiteIdentityStore:
     def test_save_and_load(self, tmp_path):
         db = tmp_path / "test.db"
         store = SQLiteIdentityStore(db_path=db)
-        identity = AgentIdentity.register(
-            agent_id="sql-agent", code="def fn(): pass", store=store
-        )
+        identity = AgentIdentity.register(agent_id="sql-agent", code="def fn(): pass", store=store)
         store.save(identity)
         loaded = store.load("sql-agent")
         assert loaded is not None
@@ -827,9 +790,7 @@ class TestThreadSafety:
 
         def worker():
             try:
-                v = ViolationRecord(
-                    violation_type="stress", severity="WARN", source_event_id="e1"
-                )
+                v = ViolationRecord(violation_type="stress", severity="WARN", source_event_id="e1")
                 for _ in range(10):
                     identity.observe_violation(v)
             except Exception as e:

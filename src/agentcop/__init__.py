@@ -17,7 +17,7 @@ from .violations import (
     detect_stale_capability,
 )
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 __all__ = [
     # Core schema

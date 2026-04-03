@@ -1,8 +1,9 @@
-"""Tests for Sentinel.ingest, detect_violations, report, and thread safety."""
+"""Tests for Sentinel.ingest, detect_violations, report, watch, and thread safety."""
 
 import threading
+import time
 
-from agentcop import Sentinel, SentinelEvent, ViolationRecord
+from agentcop import Sentinel, SentinelEvent, ViolationRecord, WatchHandle
 
 
 def make_event(event_type="unrelated", event_id="evt-001", severity="INFO", **kwargs):
@@ -370,3 +371,217 @@ class TestThreadSafety:
             t.join()
 
         assert errors == []
+
+
+class TestSentinelPush:
+    def test_push_single_event_appears_in_detect(self):
+        s = Sentinel()
+        s.push(make_event("packet_rejected", severity="ERROR"))
+        assert len(s.detect_violations()) == 1
+
+    def test_push_accumulates_events(self):
+        s = Sentinel()
+        s.push(make_event("packet_rejected", event_id="e1", severity="ERROR"))
+        s.push(make_event("capability_stale", event_id="e2", severity="ERROR"))
+        assert len(s.detect_violations()) == 2
+
+    def test_push_appends_after_ingest(self):
+        s = Sentinel()
+        s.ingest([make_event("packet_rejected", event_id="e1", severity="ERROR")])
+        s.push(make_event("capability_stale", event_id="e2", severity="ERROR"))
+        assert len(s.detect_violations()) == 2
+
+    def test_push_non_violating_event_leaves_no_violations(self):
+        s = Sentinel()
+        s.push(make_event("unrelated"))
+        assert s.detect_violations() == []
+
+    def test_concurrent_push_does_not_raise(self):
+        """50 threads calling push() simultaneously must not raise."""
+        s = Sentinel()
+        errors = []
+
+        def worker(i):
+            try:
+                s.push(make_event(event_id=f"evt-{i}"))
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(50)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == []
+        assert len(s._events) == 50
+
+
+class TestSentinelWatch:
+    def test_watch_returns_watch_handle(self):
+        s = Sentinel()
+        handle = s.watch(lambda v: None)
+        handle.stop()
+        assert isinstance(handle, WatchHandle)
+
+    def test_watch_thread_is_daemon(self):
+        s = Sentinel()
+        handle = s.watch(lambda v: None)
+        assert handle._thread.daemon is True
+        handle.stop()
+
+    def test_watch_stop_joins_thread(self):
+        s = Sentinel()
+        handle = s.watch(lambda v: None, poll_interval=0.01)
+        handle.stop()
+        assert not handle._thread.is_alive()
+
+    def test_watch_context_manager_stops_on_exit(self):
+        s = Sentinel()
+        with s.watch(lambda v: None, poll_interval=0.01) as handle:
+            assert handle._thread.is_alive()
+        assert not handle._thread.is_alive()
+
+    def test_watch_calls_on_violation_for_pushed_event(self):
+        s = Sentinel()
+        violations = []
+        received = threading.Event()
+
+        def on_v(v):
+            violations.append(v)
+            received.set()
+
+        with s.watch(on_v, poll_interval=0.01):
+            s.push(make_event("packet_rejected", severity="ERROR"))
+            assert received.wait(timeout=2.0), "violation callback never fired"
+
+        assert len(violations) == 1
+        assert violations[0].violation_type == "rejected_packet"
+
+    def test_watch_does_not_call_on_violation_for_clean_event(self):
+        s = Sentinel()
+        violations = []
+
+        with s.watch(lambda v: violations.append(v), poll_interval=0.01):
+            s.push(make_event("unrelated"))
+            time.sleep(0.05)
+
+        assert violations == []
+
+    def test_watch_processes_events_pushed_after_start(self):
+        s = Sentinel()
+        violations = []
+        received = threading.Event()
+
+        def on_v(v):
+            violations.append(v)
+            if len(violations) >= 2:
+                received.set()
+
+        with s.watch(on_v, poll_interval=0.01):
+            s.push(make_event("packet_rejected", event_id="e1", severity="ERROR"))
+            s.push(make_event("capability_stale", event_id="e2", severity="ERROR"))
+            assert received.wait(timeout=2.0), "did not receive both violations"
+
+        assert len(violations) == 2
+
+    def test_watch_does_not_rescan_already_processed_events(self):
+        """A single pushed event must trigger exactly one callback, not one per poll."""
+        s = Sentinel()
+        violations = []
+        received = threading.Event()
+
+        def on_v(v):
+            violations.append(v)
+            received.set()
+
+        with s.watch(on_v, poll_interval=0.01):
+            s.push(make_event("packet_rejected", severity="ERROR"))
+            received.wait(timeout=2.0)
+            time.sleep(0.05)  # allow extra poll cycles
+
+        assert len(violations) == 1
+
+    def test_watch_trace_id_propagated_to_violation(self):
+        s = Sentinel()
+        violations = []
+        received = threading.Event()
+
+        def on_v(v):
+            violations.append(v)
+            received.set()
+
+        with s.watch(on_v, poll_interval=0.01):
+            s.push(make_event("packet_rejected", severity="ERROR", trace_id="trace-w1"))
+            received.wait(timeout=2.0)
+
+        assert violations[0].trace_id == "trace-w1"
+
+    def test_watch_picks_up_events_already_in_buffer(self):
+        """Events pushed before watch() starts should be scanned on the first cycle."""
+        s = Sentinel()
+        s.push(make_event("packet_rejected", severity="ERROR"))
+        violations = []
+        received = threading.Event()
+
+        def on_v(v):
+            violations.append(v)
+            received.set()
+
+        with s.watch(on_v, poll_interval=0.01):
+            assert received.wait(timeout=2.0), "pre-existing event was not scanned"
+
+        assert len(violations) == 1
+
+    def test_watch_respects_custom_detectors(self):
+        def custom(event):
+            if event.event_type == "custom_event":
+                return ViolationRecord(
+                    violation_type="custom",
+                    severity="WARN",
+                    source_event_id=event.event_id,
+                )
+
+        s = Sentinel(detectors=[custom])
+        violations = []
+        received = threading.Event()
+
+        def on_v(v):
+            violations.append(v)
+            received.set()
+
+        with s.watch(on_v, poll_interval=0.01):
+            s.push(make_event("custom_event"))
+            assert received.wait(timeout=2.0)
+
+        assert violations[0].violation_type == "custom"
+
+    def test_watch_resets_watermark_when_ingest_shrinks_buffer(self):
+        """If ingest() replaces the buffer with fewer events, no events are missed."""
+        s = Sentinel()
+        s.push(make_event("unrelated", event_id="pre1"))
+        s.push(make_event("unrelated", event_id="pre2"))
+
+        violations = []
+        received = threading.Event()
+
+        def on_v(v):
+            violations.append(v)
+            received.set()
+
+        with s.watch(on_v, poll_interval=0.01):
+            # wait for the two non-violating events to be processed
+            time.sleep(0.05)
+            # replace buffer with a single violating event (smaller than watermark=2)
+            s.ingest([make_event("packet_rejected", event_id="new1", severity="ERROR")])
+            assert received.wait(timeout=2.0), "violation after ingest() was not detected"
+
+        assert violations[0].violation_type == "rejected_packet"
+
+    def test_watch_thread_does_not_block_stop_when_poll_interval_is_large(self):
+        """stop() must return promptly even when poll_interval is very large."""
+        s = Sentinel()
+        handle = s.watch(lambda v: None, poll_interval=60.0)
+        start = time.monotonic()
+        handle.stop()
+        assert time.monotonic() - start < 1.0

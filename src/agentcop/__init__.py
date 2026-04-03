@@ -1,6 +1,6 @@
 from .adapters import SentinelAdapter
 from .event import SentinelEvent, ViolationRecord
-from .sentinel import Sentinel, ViolationDetector
+from .sentinel import Sentinel, ViolationDetector, WatchHandle
 from .violations import (
     DEFAULT_DETECTORS,
     detect_ai_generated_payload,
@@ -18,6 +18,7 @@ __all__ = [
     # Auditor
     "Sentinel",
     "ViolationDetector",
+    "WatchHandle",
     # Built-in detectors
     "DEFAULT_DETECTORS",
     "detect_rejected_packet",

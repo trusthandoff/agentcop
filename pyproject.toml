@@ -1,6 +1,6 @@
 [project]
 name = "agentcop"
-version = "0.4.2"
+version = "0.4.4"
 description = "Universal forensic auditor for agent systems — OTel-aligned event schema, pluggable violation detectors"
 readme = "README.md"
 requires-python = ">=3.11"

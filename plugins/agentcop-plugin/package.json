@@ -11,6 +11,9 @@
     "openclaw.plugin.json"
   ],
   "openclaw": {
+    "extensions": [
+      "./index.js"
+    ],
     "main": "index.js",
     "compat": {
       "pluginApi": ">=2026.3.24-beta.2"

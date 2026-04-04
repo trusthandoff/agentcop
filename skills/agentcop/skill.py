@@ -28,44 +28,19 @@ import json
 import os
 import re
 import socket
-import subprocess
 import sys
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Bootstrap: ensure agentcop is importable, offer auto-install
+# Check agentcop is importable
 # ---------------------------------------------------------------------------
 
-def _ensure_agentcop() -> bool:
-    try:
-        import agentcop  # noqa: F401
-        return True
-    except ImportError:
-        pass
-
-    if os.environ.get("AGENTCOP_NO_AUTOINSTALL"):
-        return False
-
-    try:
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--quiet", "agentcop>=0.4,<1"],
-            check=True,
-            capture_output=True,
-        )
-    except subprocess.CalledProcessError:
-        return False
-
-    try:
-        import agentcop  # noqa: F401
-        return True
-    except ImportError:
-        return False
-
-
-if not _ensure_agentcop():
-    print("AGENTCOP_UNAVAILABLE")
+try:
+    import agentcop  # noqa: F401
+except ImportError:
+    print("agentcop not installed. Run: pip install agentcop — then restart your agent.")
     sys.exit(2)
 
 from agentcop import (  # noqa: E402

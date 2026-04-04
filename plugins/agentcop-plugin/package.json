@@ -1,7 +1,9 @@
 {
   "name": "@shaymizuno/agentcop-plugin",
   "version": "1.0.0",
-  "description": "OWASP LLM Top 10 runtime monitor for OpenClaw — zero config, automatic from install",
+  "displayName": "🚨 Sentinel, The Agent Cop — Protect Your Agent From Hijacking",
+  "description": "Your agent reads untrusted content. Web pages, tool results, external data — any of it can carry a prompt injection. Sentinel intercepts every message, tool call, and tool result automatically. Zero config. Real-time alerts. OWASP LLM Top 10. Install once, stay protected.",
+  "keywords": ["security", "prompt-injection", "owasp", "monitoring", "sentinel", "agentcop", "llm-security", "openclaw"],
   "license": "MIT",
   "type": "module",
   "main": "index.js",

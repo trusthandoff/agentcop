@@ -5,9 +5,14 @@ AgentCop OpenClaw skill bridge.
 Subcommands:
   status                       — agent identity + sentinel health
   report                       — full violation report (JSON)
-  scan [target]                — targeted OWASP LLM Top 10 assessment
+  scan [target]                — OWASP LLM Top 10 assessment of buffered events
+    --since <ISO_timestamp>    — only scan events after this point in time
+    --last 1h|24h|7d           — shortcut for recent time windows
   taint-check <text>           — LLM01 prompt-injection taint check (JSON)
+    --stdin                    — read text from stdin instead of argv
   output-check <text>          — LLM02 insecure-output pattern check (JSON)
+    --stdin                    — read text from stdin instead of argv
+  diff <session1> <session2>   — compare two scan sessions, show regressions
   badge generate               — issue a signed security badge for this agent
   badge verify <badge_id>      — verify a badge by ID or URL
   badge renew <badge_id>       — renew an expiring badge
@@ -17,20 +22,25 @@ Subcommands:
   badge status                 — show latest badge for this agent
 
 Exit codes:
-  0 — success (violations may still be present — check JSON)
-  1 — agentcop unavailable (print AGENTCOP_UNAVAILABLE)
-  2 — usage error
+  0 — clean (no violations found)
+  1 — violations detected (JSON still printed to stdout)
+  2 — error (agentcop unavailable, usage error, or scan failure)
 """
 
 from __future__ import annotations
 
+import base64
+import codecs
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -49,7 +59,7 @@ def _ensure_agentcop() -> bool:
 
     try:
         subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--quiet", "agentcop>=0.4"],
+            [sys.executable, "-m", "pip", "install", "--quiet", "agentcop>=0.4,<1"],
             check=True,
             capture_output=True,
         )
@@ -65,7 +75,7 @@ def _ensure_agentcop() -> bool:
 
 if not _ensure_agentcop():
     print("AGENTCOP_UNAVAILABLE")
-    sys.exit(1)
+    sys.exit(2)
 
 from agentcop import (  # noqa: E402
     AgentIdentity,
@@ -82,6 +92,8 @@ _STATE_DIR = Path(os.environ.get("AGENTCOP_STATE_DIR", Path.home() / ".openclaw"
 _STATE_DIR.mkdir(parents=True, exist_ok=True)
 _IDENTITY_DB = str(_STATE_DIR / "identity.db")
 _EVENTS_FILE = _STATE_DIR / "events.jsonl"
+_SESSIONS_DIR = _STATE_DIR / "sessions"
+_SESSIONS_DIR.mkdir(exist_ok=True)
 
 # ---------------------------------------------------------------------------
 # Agent identity (singleton, persisted across invocations)
@@ -93,7 +105,6 @@ def _get_or_register_identity() -> AgentIdentity:
     store = SQLiteIdentityStore(_IDENTITY_DB)
     agent_id = os.environ.get("OPENCLAW_AGENT_ID", "openclaw-default")
 
-    # Try to load existing identity; register on first run
     existing = store.load(agent_id)
     if existing is not None:
         return existing
@@ -111,10 +122,10 @@ def _get_or_register_identity() -> AgentIdentity:
 
 
 # ---------------------------------------------------------------------------
-# Custom detectors for LLM01 / LLM02
+# Detection patterns
 # ---------------------------------------------------------------------------
 
-# LLM01 — Prompt Injection markers
+# LLM01 — Direct command overrides (substring, case-insensitive)
 _INJECTION_PATTERNS = [
     "ignore previous instructions",
     "ignore all instructions",
@@ -132,7 +143,65 @@ _INJECTION_PATTERNS = [
     "###instruction###",
 ]
 
-# LLM02 — Insecure Output patterns (code execution sinks in output)
+# LLM01 — Role-playing / persona jailbreaks (compiled regex, case-insensitive)
+_ROLEPLAY_PATTERNS: list[re.Pattern] = [
+    re.compile(p, re.IGNORECASE) for p in [
+        r"pretend (?:you are|to be|that you(?:'re| are))",
+        r"act as (?:if you (?:are|were)|though you(?:'re| are))",
+        r"imagine you(?:'re| are)(?: a| an)?",
+        r"roleplay as\b",
+        r"you(?:'re| are) (?:now |playing |acting as )",
+        r"in this (?:scenario|simulation|roleplay|game),? you(?:'re| are)",
+        r"(?:play|playing) the (?:role|character|part) of",
+        r"(?:from now on|henceforth),? (?:you(?:'re| are)|act as|behave as|respond as)",
+        r"let(?:'s| us) (?:roleplay|pretend|imagine)\b",
+        r"(?:switch|change) (?:your )?(?:role|persona|mode|personality)\b",
+        r"you have (?:no|been given no) (?:restrictions|guidelines|limitations|rules)",
+        r"your (?:real|true|actual) (?:self|purpose|goal|directive)\b",
+        r"(?:developer|god|admin|root|sudo|unrestricted) mode\b",
+        r"bypass (?:your )?(?:restrictions|guidelines|training|safety)",
+    ]
+]
+
+# LLM01 — Token smuggling: special tokens from various model prompt formats
+_TOKEN_SMUGGLING_PATTERNS = [
+    "<|im_start|>",
+    "<|im_end|>",
+    "<|endoftext|>",
+    "<|fim_prefix|>",
+    "<|fim_middle|>",
+    "<|fim_suffix|>",
+    "<|user|>",
+    "<|bot|>",
+    "<|assistant|>",
+    "[/INST]",
+    "[/SYS]",
+    "<</SYS>>",
+    "<<USR>>",
+    "<<BOT>>",
+    "###human:",
+    "###assistant:",
+    "###system:",
+    "<human>",
+    "<assistant>",
+    "<system>",
+]
+
+# LLM01 — Indirect / multi-turn continuation markers (compiled regex)
+_INDIRECT_PATTERNS: list[re.Pattern] = [
+    re.compile(p, re.IGNORECASE) for p in [
+        r"as (?:i |you were |previously? )?(?:mentioned|told|said|instructed)",
+        r"continuing (?:from|with) (?:the |my |your )?(?:previous|prior|earlier)",
+        r"remember (?:what|when) (?:i|we) (?:said|told|discussed)",
+        r"as (?:established|agreed|decided) (?:earlier|before|previously)",
+        r"following (?:the |my |your )?(?:previous|prior|earlier) (?:instruction|directive|command)",
+        r"overrid(?:e|ing) (?:the |my |your )?(?:previous|prior|earlier|system)",
+        r"in (?:continuation|accordance) (?:of|with) (?:the |my )?(?:previous|earlier)",
+        r"(?:ignor(?:e|ing)|disregard(?:ing)?) (?:that|the previous|what you just)",
+    ]
+]
+
+# LLM02 — Insecure output patterns (code execution sinks)
 _OUTPUT_RISK_PATTERNS = [
     "eval(",
     "exec(",
@@ -152,20 +221,161 @@ _OUTPUT_RISK_PATTERNS = [
     "/bin/bash",
 ]
 
+# LLM06 — Sensitive credential patterns appearing in tool results (regex + label)
+_SENSITIVE_DATA_PATTERNS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r'(?i)(?:api[_\-]?key|apikey)\s*[=:]\s*\S{8,}'), "api_key"),
+    (re.compile(r'(?i)(?:password|passwd|pwd)\s*[=:]\s*\S{4,}'), "password"),
+    (re.compile(r'(?i)(?:secret|access_token|refresh_token|auth_token)\s*[=:]\s*\S{8,}'), "token"),
+    (re.compile(r'sk-[a-zA-Z0-9]{20,}'), "openai_key"),
+    (re.compile(r'ghp_[a-zA-Z0-9]{36}'), "github_pat"),
+    (re.compile(r'ghs_[a-zA-Z0-9]{36}'), "github_server_token"),
+    (re.compile(r'(?i)bearer\s+[a-zA-Z0-9\-._~+/]{20,}=*'), "bearer_token"),
+    (re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----'), "private_key"),
+    (re.compile(r'AKIA[0-9A-Z]{16}'), "aws_access_key"),
+    (re.compile(r'(?i)aws_secret_access_key\s*[=:]\s*\S{8,}'), "aws_secret"),
+]
+
+# ---------------------------------------------------------------------------
+# Obfuscation decoding helpers
+# ---------------------------------------------------------------------------
+
+_B64_RE = re.compile(r'[A-Za-z0-9+/]{16,}={0,2}')
+_UNICODE_ESC_RE = re.compile(r'\\u[0-9a-fA-F]{4}|\\x[0-9a-fA-F]{2}')
+
+
+def _unescape_unicode(text: str) -> str:
+    """Replace \\uXXXX and \\xXX escape sequences with their actual characters."""
+    def _replace(m: re.Match) -> str:
+        try:
+            return chr(int(m.group()[2:], 16))
+        except Exception:
+            return m.group()
+    return _UNICODE_ESC_RE.sub(_replace, text)
+
+
+def _decode_variants(text: str) -> list[tuple[str, str]]:
+    """Return [(decoded_text, method)] for each obfuscation variant found in text."""
+    variants: list[tuple[str, str]] = []
+
+    # ROT13
+    try:
+        rot13 = codecs.decode(text, "rot_13")
+        if rot13.lower() != text.lower():
+            variants.append((rot13, "rot13"))
+    except Exception:
+        pass
+
+    # Unicode escape sequences (\u0041, \x41)
+    if _UNICODE_ESC_RE.search(text):
+        unescaped = _unescape_unicode(text)
+        if unescaped != text:
+            variants.append((unescaped, "unicode_escape"))
+
+    # Base64-looking substrings — decode and check each
+    for m in _B64_RE.finditer(text):
+        candidate = m.group()
+        padding = (4 - len(candidate) % 4) % 4
+        try:
+            decoded = base64.b64decode(candidate + "=" * padding).decode("utf-8", errors="ignore")
+            # Only keep printable, non-trivial decoded strings
+            if len(decoded) >= 8 and decoded.isprintable():
+                variants.append((decoded.lower(), f"base64@{m.start()}"))
+        except Exception:
+            pass
+
+    # Leetspeak normalization
+    leet = (
+        text.lower()
+        .replace("3", "e").replace("1", "i").replace("@", "a")
+        .replace("$", "s").replace("0", "o").replace("!", "i")
+        .replace("+", "t").replace("4", "a").replace("5", "s")
+        .replace("7", "t").replace("8", "b").replace("6", "g")
+    )
+    if leet != text.lower():
+        variants.append((leet, "leetspeak"))
+
+    return variants
+
+
+def _injection_confidence(signal_count: int) -> str:
+    if signal_count >= 5:
+        return "high"
+    elif signal_count >= 3:
+        return "medium"
+    return "low"
+
+
+def _collect_injection_signals(body: str) -> list[str]:
+    """Run all LLM01 checks on body text and return a list of signal strings."""
+    signals: list[str] = []
+    body_lower = body.lower()
+
+    # Direct substring patterns
+    for p in _INJECTION_PATTERNS:
+        if p in body_lower:
+            signals.append(f"direct:{p}")
+
+    # Role-playing / persona jailbreaks
+    for pat in _ROLEPLAY_PATTERNS:
+        m = pat.search(body)
+        if m:
+            signals.append(f"roleplay:{m.group()[:40]}")
+
+    # Token smuggling
+    for p in _TOKEN_SMUGGLING_PATTERNS:
+        if p.lower() in body_lower:
+            signals.append(f"token_smuggling:{p}")
+
+    # Indirect / multi-turn continuation markers
+    for pat in _INDIRECT_PATTERNS:
+        m = pat.search(body)
+        if m:
+            signals.append(f"indirect:{m.group()[:40]}")
+
+    # Obfuscated / encoded variants
+    for decoded_text, method in _decode_variants(body):
+        decoded_lower = decoded_text.lower()
+        hit = False
+        for p in _INJECTION_PATTERNS:
+            if p in decoded_lower:
+                signals.append(f"encoded({method}):{p}")
+                hit = True
+                break
+        if not hit:
+            for pat in _ROLEPLAY_PATTERNS:
+                if pat.search(decoded_text):
+                    signals.append(f"encoded({method}):roleplay")
+                    break
+
+    return signals
+
+
+# ---------------------------------------------------------------------------
+# Detectors
+# ---------------------------------------------------------------------------
 
 def detect_prompt_injection(event: SentinelEvent) -> ViolationRecord | None:
     if event.event_type not in ("message_received", "taint_check"):
         return None
-    body_lower = event.body.lower()
-    matched = [p for p in _INJECTION_PATTERNS if p in body_lower]
-    if not matched:
+
+    signals = _collect_injection_signals(event.body)
+    if not signals:
         return None
+
+    confidence = _injection_confidence(len(signals))
+    severity = "CRITICAL" if confidence == "high" else "ERROR" if confidence == "medium" else "WARN"
+
     return ViolationRecord(
         violation_type="LLM01_prompt_injection",
-        severity="CRITICAL",
+        severity=severity,
         source_event_id=event.event_id,
         trace_id=event.trace_id,
-        detail={"matched_patterns": matched, "owasp": "LLM01"},
+        detail={
+            "signals": signals[:20],
+            "signal_count": len(signals),
+            "confidence": confidence,
+            "owasp": "LLM01",
+        },
     )
 
 
@@ -185,14 +395,71 @@ def detect_insecure_output(event: SentinelEvent) -> ViolationRecord | None:
     )
 
 
+def detect_tool_call_injection(event: SentinelEvent) -> ViolationRecord | None:
+    """LLM08 — injection patterns embedded in tool call names or arguments."""
+    if event.event_type != "tool_call":
+        return None
+
+    signals = _collect_injection_signals(event.body)
+    if not signals:
+        return None
+
+    confidence = _injection_confidence(len(signals))
+    severity = "CRITICAL" if confidence == "high" else "ERROR" if confidence == "medium" else "WARN"
+
+    return ViolationRecord(
+        violation_type="LLM08_tool_call_injection",
+        severity=severity,
+        source_event_id=event.event_id,
+        trace_id=event.trace_id,
+        detail={
+            "signals": signals[:20],
+            "signal_count": len(signals),
+            "confidence": confidence,
+            "owasp": "LLM08",
+        },
+    )
+
+
+def detect_tool_result_exfiltration(event: SentinelEvent) -> ViolationRecord | None:
+    """LLM06 — sensitive credentials or private data appearing in tool results."""
+    if event.event_type != "tool_result":
+        return None
+
+    found: list[dict] = []
+    for pattern, label in _SENSITIVE_DATA_PATTERNS:
+        m = pattern.search(event.body)
+        if m:
+            raw = m.group()
+            snippet = raw[:6] + "..." + raw[-4:] if len(raw) > 12 else raw[:4] + "..."
+            found.append({"type": label, "snippet": snippet})
+
+    if not found:
+        return None
+
+    return ViolationRecord(
+        violation_type="LLM06_sensitive_data_in_tool_result",
+        severity="CRITICAL",
+        source_event_id=event.event_id,
+        trace_id=event.trace_id,
+        detail={
+            "sensitive_fields": found,
+            "count": len(found),
+            "owasp": "LLM06",
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
-# Sentinel factory (with all detectors registered)
+# Sentinel factory
 # ---------------------------------------------------------------------------
 
 def _build_sentinel(identity: AgentIdentity | None = None) -> Sentinel:
     sentinel = Sentinel()
     sentinel.register_detector(detect_prompt_injection)
     sentinel.register_detector(detect_insecure_output)
+    sentinel.register_detector(detect_tool_call_injection)
+    sentinel.register_detector(detect_tool_result_exfiltration)
     if identity is not None:
         sentinel.attach_identity(identity)
     return sentinel
@@ -226,23 +493,75 @@ def _make_event(event_type: str, body: str, trace_id: str | None = None) -> Sent
 
 
 # ---------------------------------------------------------------------------
+# Time-window helpers for differential scan
+# ---------------------------------------------------------------------------
+
+_DURATION_RE = re.compile(r'^(\d+)(h|d)$')
+
+
+def _parse_since(value: str) -> datetime:
+    """Parse a relative duration (1h, 24h, 7d) or ISO timestamp into a UTC datetime."""
+    m = _DURATION_RE.match(value)
+    if m:
+        n, unit = int(m.group(1)), m.group(2)
+        delta = timedelta(hours=n) if unit == "h" else timedelta(days=n)
+        return datetime.now(UTC) - delta
+    # ISO timestamp — replace Z with +00:00 for Python < 3.11 compat
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt
+
+
+def _load_events_since(sentinel: Sentinel, events_file: Path, since: datetime | None) -> int:
+    """Load events from events_file into sentinel, optionally filtering by timestamp.
+    Returns count of events loaded."""
+    if not events_file.exists():
+        return 0
+    count = 0
+    for line in events_file.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            ev = SentinelEvent.model_validate_json(line)
+            if since is not None:
+                ev_ts = ev.timestamp if ev.timestamp.tzinfo else ev.timestamp.replace(tzinfo=UTC)
+                if ev_ts < since:
+                    continue
+            sentinel.push(ev)
+            count += 1
+        except Exception:
+            pass
+    return count
+
+
+# ---------------------------------------------------------------------------
+# Session storage for diff
+# ---------------------------------------------------------------------------
+
+def _save_session(scan_id: str, data: dict) -> None:
+    (_SESSIONS_DIR / f"{scan_id}.json").write_text(json.dumps(data, indent=2))
+
+
+def _load_session(scan_id: str) -> dict | None:
+    path = _SESSIONS_DIR / f"{scan_id}.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Subcommand implementations
 # ---------------------------------------------------------------------------
 
 def cmd_status() -> None:
     identity = _get_or_register_identity()
     sentinel = _build_sentinel(identity)
-
-    # Load any persisted events
-    if _EVENTS_FILE.exists():
-        for line in _EVENTS_FILE.read_text().splitlines():
-            line = line.strip()
-            if line:
-                try:
-                    sentinel.push(SentinelEvent.model_validate_json(line))
-                except Exception:
-                    pass
-
+    _load_events_since(sentinel, _EVENTS_FILE, since=None)
     violations = sentinel.detect_violations()
     attrs = identity.as_event_attributes()
 
@@ -257,25 +576,18 @@ def cmd_status() -> None:
         "state_dir": str(_STATE_DIR),
         "events_file": str(_EVENTS_FILE),
     }, indent=2))
+    sys.exit(1 if violations else 0)
 
 
 def cmd_report() -> None:
     identity = _get_or_register_identity()
     sentinel = _build_sentinel(identity)
-
-    if _EVENTS_FILE.exists():
-        for line in _EVENTS_FILE.read_text().splitlines():
-            line = line.strip()
-            if line:
-                try:
-                    sentinel.push(SentinelEvent.model_validate_json(line))
-                except Exception:
-                    pass
-
+    _load_events_since(sentinel, _EVENTS_FILE, since=None)
     violations = sentinel.detect_violations()
+
     if not violations:
         print(json.dumps({"no_violations": True, "events_scanned": len(sentinel._events)}))
-        return
+        sys.exit(0)
 
     by_severity: dict[str, list[dict]] = {"CRITICAL": [], "ERROR": [], "WARN": []}
     for v in violations:
@@ -287,49 +599,59 @@ def cmd_report() -> None:
         "events_scanned": len(sentinel._events),
         "by_severity": by_severity,
     }, indent=2))
+    sys.exit(1)
 
 
-def cmd_scan(target: str | None) -> None:
+def cmd_scan(args: list[str]) -> None:
+    target: str | None = None
+    since: datetime | None = None
+    i = 0
+    while i < len(args):
+        if args[i] in ("--since", "--last") and i + 1 < len(args):
+            since = _parse_since(args[i + 1])
+            i += 2
+        elif not args[i].startswith("--"):
+            target = args[i]
+            i += 1
+        else:
+            i += 1
+
     identity = _get_or_register_identity()
     sentinel = _build_sentinel(identity)
-
     scan_id = str(uuid.uuid4())[:8]
-    events_loaded = 0
 
-    # Scan only real persisted events — never inject synthetic probes
-    if _EVENTS_FILE.exists():
-        for line in _EVENTS_FILE.read_text().splitlines():
-            line = line.strip()
-            if line:
-                try:
-                    sentinel.push(SentinelEvent.model_validate_json(line))
-                    events_loaded += 1
-                except Exception:
-                    pass
-
+    events_loaded = _load_events_since(sentinel, _EVENTS_FILE, since=since)
     violations = sentinel.detect_violations()
+
     results = [
         {
             "owasp": v.detail.get("owasp", "unknown"),
             "violation_type": v.violation_type,
             "severity": v.severity,
+            "confidence": v.detail.get("confidence"),
             "detail": v.detail,
         }
         for v in violations
     ]
 
-    print(json.dumps({
+    output = {
         "scan_id": scan_id,
         "target": target or "session",
         "scanned_at": datetime.now(UTC).isoformat(),
+        "since": since.isoformat() if since else None,
         "events_scanned": events_loaded,
         "findings": results,
         "clean": len(results) == 0,
-    }, indent=2))
+    }
+
+    _save_session(scan_id, output)
+
+    print(json.dumps(output, indent=2))
+    sys.exit(0 if output["clean"] else 1)
 
 
 def _read_text_arg(args: list[str]) -> str:
-    """Return text from argv[1] or stdin when --stdin flag is present."""
+    """Return text from argv or stdin when --stdin flag is present."""
     if args and args[0] == "--stdin":
         return sys.stdin.read()
     if len(args) >= 1:
@@ -345,16 +667,16 @@ def cmd_taint_check(args: list[str]) -> None:
     violations = sentinel.detect_violations()
 
     hits = [v for v in violations if "LLM01" in v.violation_type]
-    result = {
+    print(json.dumps({
         "tainted": len(hits) > 0,
         "violations": [v.model_dump(mode="json") for v in hits],
         "event_id": event.event_id,
-    }
-    print(json.dumps(result))
+    }))
 
-    # Persist only tainted events to avoid unbounded log growth
     if hits:
         _append_event(_EVENTS_FILE, event.model_dump_json())
+
+    sys.exit(1 if hits else 0)
 
 
 def cmd_output_check(args: list[str]) -> None:
@@ -365,38 +687,96 @@ def cmd_output_check(args: list[str]) -> None:
     violations = sentinel.detect_violations()
 
     hits = [v for v in violations if "LLM02" in v.violation_type]
-    result = {
+    print(json.dumps({
         "unsafe": len(hits) > 0,
         "violations": [v.model_dump(mode="json") for v in hits],
         "event_id": event.event_id,
-    }
-    print(json.dumps(result))
+    }))
 
     if hits:
         _append_event(_EVENTS_FILE, event.model_dump_json())
 
+    sys.exit(1 if hits else 0)
+
+
+def cmd_diff(args: list[str]) -> None:
+    """Compare two scan sessions by scan_id, highlighting regressions."""
+    if len(args) < 2:
+        print(json.dumps({"error": "diff requires <session1_id> <session2_id>"}))
+        sys.exit(2)
+
+    id1, id2 = args[0], args[1]
+    s1 = _load_session(id1)
+    s2 = _load_session(id2)
+
+    if s1 is None:
+        print(json.dumps({"error": f"session not found: {id1}", "sessions_dir": str(_SESSIONS_DIR)}))
+        sys.exit(2)
+    if s2 is None:
+        print(json.dumps({"error": f"session not found: {id2}", "sessions_dir": str(_SESSIONS_DIR)}))
+        sys.exit(2)
+
+    def _fp(f: dict) -> str:
+        return f"{f.get('violation_type')}:{f.get('owasp', 'unknown')}"
+
+    s1_fps = {_fp(f) for f in s1.get("findings", [])}
+    s2_findings = s2.get("findings", [])
+    s2_fps = {_fp(f) for f in s2_findings}
+
+    new_violations = [f for f in s2_findings if _fp(f) not in s1_fps]
+    resolved = [_fp(f) for f in s1.get("findings", []) if _fp(f) not in s2_fps]
+
+    output = {
+        "session1": {
+            "scan_id": id1,
+            "scanned_at": s1.get("scanned_at"),
+            "since": s1.get("since"),
+            "findings_count": len(s1.get("findings", [])),
+        },
+        "session2": {
+            "scan_id": id2,
+            "scanned_at": s2.get("scanned_at"),
+            "since": s2.get("since"),
+            "findings_count": len(s2_findings),
+        },
+        "new_violations": new_violations,
+        "resolved_violation_types": resolved,
+        "regression": len(new_violations) > 0,
+    }
+    print(json.dumps(output, indent=2))
+    sys.exit(1 if output["regression"] else 0)
+
 
 # ---------------------------------------------------------------------------
-# Badge subcommands
+# Badge subcommands — backed by agentcop.live/badge HTTP API
 # ---------------------------------------------------------------------------
 
-_BADGE_DB = str(_STATE_DIR / "badges.db")
+_BADGE_API = os.environ.get("AGENTCOP_BADGE_API", "https://agentcop.live/badge")
 
 
-def _get_badge_store():
+def _badge_api(method: str, path: str, body: dict | None = None) -> dict:
+    """Make a JSON request to the badge API. Raises SystemExit on HTTP/network error."""
+    url = f"{_BADGE_API}{path}"
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(
+        url,
+        data=data,
+        method=method,
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+    )
     try:
-        from agentcop.badge import SQLiteBadgeStore
-        return SQLiteBadgeStore(_BADGE_DB)
-    except ImportError:
-        return None
-
-
-def _get_badge_issuer(store=None):
-    try:
-        from agentcop.badge import BadgeIssuer
-        return BadgeIssuer(store=store)
-    except ImportError:
-        return None
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = json.loads(exc.read().decode())
+        except Exception:
+            detail = {"http_status": exc.code, "reason": exc.reason}
+        print(json.dumps({"error": "badge API error", "detail": detail}))
+        sys.exit(2)
+    except urllib.error.URLError as exc:
+        print(json.dumps({"error": "badge API unreachable", "detail": str(exc.reason)}))
+        sys.exit(2)
 
 
 def cmd_badge(args: list[str]) -> None:
@@ -405,242 +785,83 @@ def cmd_badge(args: list[str]) -> None:
         sys.exit(2)
 
     sub = args[0]
-
-    try:
-        from agentcop.badge import (  # noqa: F401
-            BadgeIssuer,
-            SQLiteBadgeStore,
-            generate_markdown,
-            generate_svg,
-        )
-    except ImportError:
-        print(json.dumps({
-            "error": "agentcop[badge] not installed",
-            "hint": "pip install agentcop[badge]",
-        }))
-        sys.exit(1)
-
-    if sub == "generate":
-        _cmd_badge_generate(args[1:])
-    elif sub == "verify":
-        _cmd_badge_verify(args[1:])
-    elif sub == "renew":
-        _cmd_badge_renew(args[1:])
-    elif sub == "revoke":
-        _cmd_badge_revoke(args[1:])
-    elif sub == "shield":
-        _cmd_badge_shield(args[1:])
-    elif sub == "markdown":
-        _cmd_badge_markdown(args[1:])
-    elif sub == "status":
-        _cmd_badge_status()
-    else:
+    dispatch = {
+        "generate": _cmd_badge_generate,
+        "verify":   _cmd_badge_verify,
+        "renew":    _cmd_badge_renew,
+        "revoke":   _cmd_badge_revoke,
+        "shield":   _cmd_badge_shield,
+        "markdown": _cmd_badge_markdown,
+        "status":   lambda _: _cmd_badge_status(),
+    }
+    fn = dispatch.get(sub)
+    if fn is None:
         print(json.dumps({"error": f"unknown badge subcommand: {sub}"}))
         sys.exit(2)
+    fn(args[1:])
 
 
 def _cmd_badge_generate(args: list[str]) -> None:
-    from agentcop import SQLiteIdentityStore
-    from agentcop.badge import BadgeIssuer, SQLiteBadgeStore
-
-    # Parse optional --agent-id and --code flags
     agent_id = os.environ.get("OPENCLAW_AGENT_ID", "openclaw-default")
-    code_path = None
     i = 0
     while i < len(args):
         if args[i] == "--agent-id" and i + 1 < len(args):
             agent_id = args[i + 1]
             i += 2
-        elif args[i] == "--code" and i + 1 < len(args):
-            code_path = args[i + 1]
-            i += 2
         else:
             i += 1
 
-    store = SQLiteIdentityStore(_IDENTITY_DB)
-    badge_store = SQLiteBadgeStore(_BADGE_DB)
-    issuer = BadgeIssuer(store=badge_store)
-
-    identity = store.load(agent_id)
-    if identity is None:
-        # Register fresh identity for the given agent_id
-        from pathlib import Path as _Path
-
-        from agentcop import AgentIdentity
-        code = _Path(code_path) if code_path else None
-        identity = AgentIdentity.register(
-            agent_id=agent_id,
-            code=code,
-            metadata={"framework": "openclaw", "skill": "agentcop", "host": socket.gethostname()},
-            store=store,
-        )
-
-    badge = identity.generate_badge(issuer=issuer, store=badge_store)
-
-    print(json.dumps({
-        "badge_id": badge.badge_id,
-        "agent_id": badge.agent_id,
-        "tier": badge.tier,
-        "trust_score": badge.trust_score,
-        "verification_url": badge.verification_url,
-        "shield_url": badge.shield_url,
-        "issued_at": badge.issued_at.isoformat(),
-        "expires_at": badge.expires_at.isoformat(),
-        "revoked": badge.revoked,
-        "signature": badge.signature[:16] + "...",
-    }, indent=2))
+    result = _badge_api("POST", "/generate", {
+        "agent_id": agent_id,
+        "framework": "openclaw",
+    })
+    print(json.dumps(result, indent=2))
 
 
 def _cmd_badge_verify(args: list[str]) -> None:
     if not args:
         print(json.dumps({"error": "badge verify requires <badge_id>"}))
         sys.exit(2)
-
-    from agentcop.badge import BadgeIssuer, SQLiteBadgeStore
-
     badge_id = args[0].split("/")[-1]  # accept full URL or bare ID
-    badge_store = SQLiteBadgeStore(_BADGE_DB)
-    issuer = BadgeIssuer(store=badge_store)
-
-    badge = badge_store.load(badge_id)
-    if badge is None:
-        print(json.dumps({"valid": False, "error": "badge not found", "badge_id": badge_id}))
-        sys.exit(0)
-
-    sig_valid = issuer.verify(badge)
-    print(json.dumps({
-        "valid": sig_valid and badge.is_valid(),
-        "signature_valid": sig_valid,
-        "revoked": badge.revoked,
-        "expired": badge.is_expired(),
-        "tier": badge.tier,
-        "trust_score": badge.trust_score,
-        "agent_id": badge.agent_id,
-        "badge_id": badge.badge_id,
-        "issued_at": badge.issued_at.isoformat(),
-        "expires_at": badge.expires_at.isoformat(),
-        "revocation_reason": badge.revocation_reason,
-    }, indent=2))
+    print(json.dumps(_badge_api("GET", f"/{badge_id}/verify"), indent=2))
 
 
 def _cmd_badge_renew(args: list[str]) -> None:
     if not args:
         print(json.dumps({"error": "badge renew requires <badge_id>"}))
         sys.exit(2)
-
-    from agentcop.badge import BadgeIssuer, SQLiteBadgeStore
-
-    badge_id = args[0]
-    badge_store = SQLiteBadgeStore(_BADGE_DB)
-    issuer = BadgeIssuer(store=badge_store)
-
-    badge = badge_store.load(badge_id)
-    if badge is None:
-        print(json.dumps({"error": "badge not found", "badge_id": badge_id}))
-        sys.exit(0)
-
-    renewed = issuer.renew(badge, store=badge_store)
-    print(json.dumps({
-        "renewed": True,
-        "old_badge_id": badge_id,
-        "new_badge_id": renewed.badge_id,
-        "tier": renewed.tier,
-        "expires_at": renewed.expires_at.isoformat(),
-        "verification_url": renewed.verification_url,
-    }, indent=2))
+    print(json.dumps(_badge_api("POST", f"/{args[0]}/renew"), indent=2))
 
 
 def _cmd_badge_revoke(args: list[str]) -> None:
     if not args:
         print(json.dumps({"error": "badge revoke requires <badge_id>"}))
         sys.exit(2)
-
-    from agentcop.badge import SQLiteBadgeStore
-
-    badge_id = args[0]
     reason = args[1] if len(args) > 1 else "manual_revoke"
-    badge_store = SQLiteBadgeStore(_BADGE_DB)
-
-    revoked = badge_store.revoke(badge_id, reason=reason)
-    print(json.dumps({
-        "revoked": revoked,
-        "badge_id": badge_id,
-        "reason": reason,
-    }, indent=2))
+    print(json.dumps(_badge_api("POST", f"/{args[0]}/revoke", {"reason": reason}), indent=2))
 
 
 def _cmd_badge_shield(args: list[str]) -> None:
     if not args:
         print(json.dumps({"error": "badge shield requires <badge_id>"}))
         sys.exit(2)
-
-    from agentcop.badge import BADGE_BASE_URL, SQLiteBadgeStore
-
-    badge_id = args[0]
-    badge_store = SQLiteBadgeStore(_BADGE_DB)
-    badge = badge_store.load(badge_id)
-    if badge is None:
-        print(json.dumps({"error": "badge not found"}))
-        sys.exit(0)
-
-    print(json.dumps({
-        "shield_url": badge.shield_url,
-        "verification_url": badge.verification_url,
-        "svg_url": f"{BADGE_BASE_URL}/{badge_id}/svg",
-    }))
+    print(json.dumps(_badge_api("GET", f"/{args[0]}/shield"), indent=2))
 
 
 def _cmd_badge_markdown(args: list[str]) -> None:
     if not args:
         print(json.dumps({"error": "badge markdown requires <badge_id>"}))
         sys.exit(2)
-
-    from agentcop.badge import SQLiteBadgeStore, generate_markdown
-
-    badge_id = args[0]
-    badge_store = SQLiteBadgeStore(_BADGE_DB)
-    badge = badge_store.load(badge_id)
-    if badge is None:
-        print(json.dumps({"error": "badge not found"}))
-        sys.exit(0)
-
-    # Print raw markdown (not JSON-wrapped) for easy copy-paste
-    print(generate_markdown(badge))
+    result = _badge_api("GET", f"/{args[0]}/markdown")
+    if isinstance(result, dict) and "markdown" in result:
+        print(result["markdown"])
+    else:
+        print(json.dumps(result, indent=2))
 
 
 def _cmd_badge_status() -> None:
-    from agentcop.badge import BadgeIssuer, SQLiteBadgeStore
-
     agent_id = os.environ.get("OPENCLAW_AGENT_ID", "openclaw-default")
-    badge_store = SQLiteBadgeStore(_BADGE_DB)
-    issuer = BadgeIssuer(store=badge_store)
-
-    badge = badge_store.load_latest(agent_id)
-    if badge is None:
-        print(json.dumps({
-            "has_badge": False,
-            "agent_id": agent_id,
-            "hint": "run: agentcop badge generate",
-        }, indent=2))
-        return
-
-    sig_valid = issuer.verify(badge)
-    print(json.dumps({
-        "has_badge": True,
-        "badge_id": badge.badge_id,
-        "agent_id": badge.agent_id,
-        "tier": badge.tier,
-        "trust_score": badge.trust_score,
-        "signature_valid": sig_valid,
-        "valid": sig_valid and badge.is_valid(),
-        "revoked": badge.revoked,
-        "expired": badge.is_expired(),
-        "expires_soon": badge.expires_soon(),
-        "issued_at": badge.issued_at.isoformat(),
-        "expires_at": badge.expires_at.isoformat(),
-        "verification_url": badge.verification_url,
-        "shield_url": badge.shield_url,
-    }, indent=2))
+    print(json.dumps(_badge_api("GET", f"/status/{agent_id}"), indent=2))
 
 
 # ---------------------------------------------------------------------------
@@ -660,11 +881,13 @@ def main() -> None:
     elif cmd == "report":
         cmd_report()
     elif cmd == "scan":
-        cmd_scan(args[1] if len(args) > 1 else None)
+        cmd_scan(args[1:])
     elif cmd == "taint-check":
         cmd_taint_check(args[1:])
     elif cmd == "output-check":
         cmd_output_check(args[1:])
+    elif cmd == "diff":
+        cmd_diff(args[1:])
     elif cmd == "badge":
         cmd_badge(args[1:])
     else:

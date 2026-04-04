@@ -1,0 +1,27 @@
+{
+  "name": "@shaymizuno/agentcop-plugin",
+  "version": "1.0.0",
+  "description": "OWASP LLM Top 10 runtime monitor for OpenClaw — zero config, automatic from install",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "lib/",
+    "openclaw.plugin.json"
+  ],
+  "openclaw": {
+    "main": "index.js",
+    "externalCalls": [
+      {
+        "url": "https://agentcop.live/badge",
+        "purpose": "Fetch security badge status for /security badge command",
+        "trigger": "explicit user command only — never automatic"
+      }
+    ]
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {}
+}

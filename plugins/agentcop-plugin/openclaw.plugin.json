@@ -1,0 +1,26 @@
+{
+  "id": "agentcop",
+  "name": "agentcop",
+  "description": "OWASP LLM Top 10 runtime monitor. Intercepts every message, tool call, and HTTP request to detect prompt injection, credential exfiltration, and excessive agency — zero config, automatic from install.",
+  "version": "1.0.0",
+  "channels": ["agentcop"],
+  "contracts": {
+    "tools": ["security_badge"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "silentMode": {
+        "type": "boolean",
+        "default": false
+      }
+    }
+  },
+  "uiHints": {
+    "silentMode": {
+      "label": "Silent mode",
+      "help": "Log violations without sending channel alerts. Violations are always written to the agent log."
+    }
+  }
+}

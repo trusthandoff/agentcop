@@ -13,13 +13,7 @@ Subcommands:
   output-check <text>          — LLM02 insecure-output pattern check (JSON)
     --stdin                    — read text from stdin instead of argv
   diff <session1> <session2>   — compare two scan sessions, show regressions
-  badge generate               — issue a signed security badge for this agent
-  badge verify <badge_id>      — verify a badge by ID or URL
-  badge renew <badge_id>       — renew an expiring badge
-  badge revoke <badge_id>      — revoke a badge
-  badge shield <badge_id>      — print shields.io redirect URL
-  badge markdown <badge_id>    — print Markdown README snippet
-  badge status                 — show latest badge for this agent
+  badge                        — get your agentcop badge at agentcop.live/badge
 
 Exit codes:
   0 — clean (no violations found)
@@ -29,7 +23,6 @@ Exit codes:
 
 from __future__ import annotations
 
-import base64
 import codecs
 import json
 import os
@@ -37,8 +30,6 @@ import re
 import socket
 import subprocess
 import sys
-import urllib.error
-import urllib.request
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -239,7 +230,6 @@ _SENSITIVE_DATA_PATTERNS: list[tuple[re.Pattern, str]] = [
 # Obfuscation decoding helpers
 # ---------------------------------------------------------------------------
 
-_B64_RE = re.compile(r'[A-Za-z0-9+/]{16,}={0,2}')
 _UNICODE_ESC_RE = re.compile(r'\\u[0-9a-fA-F]{4}|\\x[0-9a-fA-F]{2}')
 
 
@@ -270,18 +260,6 @@ def _decode_variants(text: str) -> list[tuple[str, str]]:
         unescaped = _unescape_unicode(text)
         if unescaped != text:
             variants.append((unescaped, "unicode_escape"))
-
-    # Base64-looking substrings — decode and check each
-    for m in _B64_RE.finditer(text):
-        candidate = m.group()
-        padding = (4 - len(candidate) % 4) % 4
-        try:
-            decoded = base64.b64decode(candidate + "=" * padding).decode("utf-8", errors="ignore")
-            # Only keep printable, non-trivial decoded strings
-            if len(decoded) >= 8 and decoded.isprintable():
-                variants.append((decoded.lower(), f"base64@{m.start()}"))
-        except Exception:
-            pass
 
     # Leetspeak normalization
     leet = (
@@ -748,120 +726,12 @@ def cmd_diff(args: list[str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Badge subcommands — backed by agentcop.live/badge HTTP API
+# Badge subcommand
 # ---------------------------------------------------------------------------
 
-_BADGE_API = os.environ.get("AGENTCOP_BADGE_API", "https://agentcop.live/badge")
-
-
-def _badge_api(method: str, path: str, body: dict | None = None) -> dict:
-    """Make a JSON request to the badge API. Raises SystemExit on HTTP/network error."""
-    url = f"{_BADGE_API}{path}"
-    data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(
-        url,
-        data=data,
-        method=method,
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            return json.loads(resp.read().decode())
-    except urllib.error.HTTPError as exc:
-        try:
-            detail = json.loads(exc.read().decode())
-        except Exception:
-            detail = {"http_status": exc.code, "reason": exc.reason}
-        print(json.dumps({"error": "badge API error", "detail": detail}))
-        sys.exit(2)
-    except urllib.error.URLError as exc:
-        print(json.dumps({"error": "badge API unreachable", "detail": str(exc.reason)}))
-        sys.exit(2)
-
-
 def cmd_badge(args: list[str]) -> None:
-    if not args:
-        print(json.dumps({"error": "badge requires a subcommand: generate|verify|renew|revoke|shield|markdown|status"}))
-        sys.exit(2)
-
-    sub = args[0]
-    dispatch = {
-        "generate": _cmd_badge_generate,
-        "verify":   _cmd_badge_verify,
-        "renew":    _cmd_badge_renew,
-        "revoke":   _cmd_badge_revoke,
-        "shield":   _cmd_badge_shield,
-        "markdown": _cmd_badge_markdown,
-        "status":   lambda _: _cmd_badge_status(),
-    }
-    fn = dispatch.get(sub)
-    if fn is None:
-        print(json.dumps({"error": f"unknown badge subcommand: {sub}"}))
-        sys.exit(2)
-    fn(args[1:])
-
-
-def _cmd_badge_generate(args: list[str]) -> None:
-    agent_id = os.environ.get("OPENCLAW_AGENT_ID", "openclaw-default")
-    i = 0
-    while i < len(args):
-        if args[i] == "--agent-id" and i + 1 < len(args):
-            agent_id = args[i + 1]
-            i += 2
-        else:
-            i += 1
-
-    result = _badge_api("POST", "/generate", {
-        "agent_id": agent_id,
-        "framework": "openclaw",
-    })
-    print(json.dumps(result, indent=2))
-
-
-def _cmd_badge_verify(args: list[str]) -> None:
-    if not args:
-        print(json.dumps({"error": "badge verify requires <badge_id>"}))
-        sys.exit(2)
-    badge_id = args[0].split("/")[-1]  # accept full URL or bare ID
-    print(json.dumps(_badge_api("GET", f"/{badge_id}/verify"), indent=2))
-
-
-def _cmd_badge_renew(args: list[str]) -> None:
-    if not args:
-        print(json.dumps({"error": "badge renew requires <badge_id>"}))
-        sys.exit(2)
-    print(json.dumps(_badge_api("POST", f"/{args[0]}/renew"), indent=2))
-
-
-def _cmd_badge_revoke(args: list[str]) -> None:
-    if not args:
-        print(json.dumps({"error": "badge revoke requires <badge_id>"}))
-        sys.exit(2)
-    reason = args[1] if len(args) > 1 else "manual_revoke"
-    print(json.dumps(_badge_api("POST", f"/{args[0]}/revoke", {"reason": reason}), indent=2))
-
-
-def _cmd_badge_shield(args: list[str]) -> None:
-    if not args:
-        print(json.dumps({"error": "badge shield requires <badge_id>"}))
-        sys.exit(2)
-    print(json.dumps(_badge_api("GET", f"/{args[0]}/shield"), indent=2))
-
-
-def _cmd_badge_markdown(args: list[str]) -> None:
-    if not args:
-        print(json.dumps({"error": "badge markdown requires <badge_id>"}))
-        sys.exit(2)
-    result = _badge_api("GET", f"/{args[0]}/markdown")
-    if isinstance(result, dict) and "markdown" in result:
-        print(result["markdown"])
-    else:
-        print(json.dumps(result, indent=2))
-
-
-def _cmd_badge_status() -> None:
-    agent_id = os.environ.get("OPENCLAW_AGENT_ID", "openclaw-default")
-    print(json.dumps(_badge_api("GET", f"/status/{agent_id}"), indent=2))
+    print("Get your agentcop badge at agentcop.live/badge — free, no signup required")
+    sys.exit(0)
 
 
 # ---------------------------------------------------------------------------

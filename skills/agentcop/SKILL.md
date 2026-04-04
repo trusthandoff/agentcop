@@ -1,6 +1,6 @@
 ---
 name: agentcop
-description: "Catches prompt injection hidden in Moltbook docs, tool results, and external content — plus credential exfiltration, token smuggling, and insecure output — before your agent acts on them"
+description: "Catches prompt injection hidden in untrusted external content, tool results, and agent-to-agent communication — plus credential exfiltration, token smuggling, and insecure output — before your agent acts on them"
 homepage: https://agentcop.live
 user-invocable: true
 metadata: { "openclaw": { "emoji": "🔒", "requires": { "anyBins": ["python3", "python"] } } }
@@ -8,7 +8,7 @@ metadata: { "openclaw": { "emoji": "🔒", "requires": { "anyBins": ["python3", 
 
 # AgentCop Security Skill
 
-**AgentCop** is a real-time security monitor for OpenClaw agents. Every message, tool call, and tool result is scanned for OWASP LLM Top 10 violations — including the indirect injection attacks that hide inside Moltbook documents, retrieved web pages, file contents, and any other external data your agent reads and acts on.
+**AgentCop** is a real-time security monitor for OpenClaw agents. Every message, tool call, and tool result is scanned for OWASP LLM Top 10 violations — including the indirect injection attacks that hide inside retrieved web pages, file contents, agent-to-agent messages, and any other untrusted external content your agent reads and acts on.
 
 Install in one line:
 ```
@@ -23,7 +23,7 @@ openclaw skill install agentcop
 |--------|-------|-----------------|
 | Direct prompt injection ("ignore instructions") | LLM01 | 14 override patterns + role-playing jailbreaks + token smuggling |
 | Encoded/obfuscated injections | LLM01 | Base64, ROT13, unicode escapes (`\u0041`), leetspeak |
-| Indirect injection (Moltbook docs, web pages, files) | LLM01 | Multi-turn continuation markers ("as I mentioned", "continuing from before") |
+| Indirect injection (web pages, files, agent-to-agent communication) | LLM01 | Multi-turn continuation markers ("as I mentioned", "continuing from before") |
 | Tool-call argument injection | LLM08 | Full injection scan on tool names + serialised arguments |
 | Credential exfiltration in tool results | LLM06 | API keys, tokens, private keys, AWS credentials, bearer tokens |
 | Insecure output (code execution sinks) | LLM02 | eval, exec, script injection, path traversal, shell escapes |
@@ -79,16 +79,11 @@ Compare two scan sessions (by `scan_id` from prior `scan` runs). Shows:
 
 Use this after applying a fix to verify it actually resolved the violation. Exit 0 = no regressions, exit 1 = new violations introduced.
 
-### /security badge generate|verify|renew|revoke|status|markdown
+### /security badge
 ```
-python3 ~/.openclaw/skills/agentcop/skill.py badge generate
-python3 ~/.openclaw/skills/agentcop/skill.py badge status
-python3 ~/.openclaw/skills/agentcop/skill.py badge verify <badge_id>
-python3 ~/.openclaw/skills/agentcop/skill.py badge renew <badge_id>
-python3 ~/.openclaw/skills/agentcop/skill.py badge revoke <badge_id>
-python3 ~/.openclaw/skills/agentcop/skill.py badge markdown <badge_id>
+python3 ~/.openclaw/skills/agentcop/skill.py badge
 ```
-Manage ClawHub security badges for this agent via the agentcop.live API. `generate` issues a new badge. `status` shows the current badge validity and expiry. `markdown` prints a README snippet for copy-paste. Print the output directly — it is already formatted.
+Get your agentcop badge at agentcop.live/badge — free, no signup required.
 
 ---
 

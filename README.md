@@ -18,6 +18,7 @@ OTel-aligned schema. Pluggable detectors. Adapter bridge to your stack. Zero req
 - Ed25519-signed `AgentBadge` system — tiered SECURED / MONITORED / AT RISK certificates for README display and cross-agent verification
 - **Moltbook adapter** — purpose-built monitoring for AI agents on the Moltbook social network: prompt-injection taint analysis on every received post, coordinated campaign detection, skill badge verification (LLM05), API key exfiltration detection (LLM06), and Ed25519 badge integration for agent profiles
 - OpenClaw integration — `/security` skill commands + `agentcop-monitor` hook for real-time LLM01/LLM02 detection in Telegram, WhatsApp, Discord, and more
+- **Runtime Security Layer** — four composable enforcement layers: `ExecutionGate` (policy-based tool execution with SQLite audit log), `ToolPermissionLayer` (declarative capability scoping, deny by default), `AgentSandbox` (runtime isolation with active syscall interception), `ApprovalBoundary` (human-in-the-loop for high-risk actions). `AgentCop.protect()` chains all four in one line.
 - Optional OTel export via `agentcop[otel]`
 
 ```
@@ -414,6 +415,175 @@ The **`agentcop` skill** adds `/security` commands:
 ```
 
 See [docs/guides/openclaw.md](docs/guides/openclaw.md) for the full integration guide.
+
+---
+
+## Runtime Security Layer
+
+`agentcop` v0.4.7 ships a runtime enforcement stack: four composable layers that intercept, gate, and sandbox agent tool calls before they execute. Drop it in front of any agent object with a single line.
+
+```
+pip install agentcop[runtime]
+```
+
+### One-line protection
+
+```python
+from agentcop.cop import AgentCop
+from agentcop.gate import ExecutionGate
+from agentcop.permissions import ToolPermissionLayer, NetworkPermission, ReadPermission
+from agentcop.sandbox import AgentSandbox
+from agentcop.approvals import ApprovalBoundary
+
+gate = ExecutionGate(db_path="agentcop_gate.db")
+permissions = ToolPermissionLayer()
+permissions.declare("my-agent", [
+    ReadPermission(paths=["/data/*", "/tmp/*"]),
+    NetworkPermission(domains=["api.openai.com"], allow_subdomains=True),
+])
+sandbox = AgentSandbox(allowed_paths=["/data/*", "/tmp/*"], allowed_domains=["api.openai.com"])
+approvals = ApprovalBoundary(requires_approval_above=70, channels=["cli"], timeout=300)
+
+cop = AgentCop(
+    gate=gate,
+    permissions=permissions,
+    sandbox=sandbox,
+    approvals=approvals,
+)
+
+# Wrap any agent object — run() goes through the full enforcement pipeline
+protected = cop.protect(your_agent)
+result = protected.run(task)
+```
+
+Each `protected.run()` call passes through five stages in order:
+
+1. **Trust guard** — blocks if `AgentIdentity` trust score < 30
+2. **ExecutionGate** — evaluates registered tool policy, logs decision to SQLite
+3. **ToolPermissionLayer** — enforces declared capability scope (deny by default)
+4. **ApprovalBoundary** — requests human sign-off above the risk threshold
+5. **AgentSandbox** — wraps the call with active syscall interception
+
+### ExecutionGate
+
+Policy-based execution control with a persistent audit log.
+
+```python
+from agentcop.gate import ExecutionGate, DenyPolicy, RateLimitPolicy, ConditionalPolicy
+
+gate = ExecutionGate(db_path="agentcop_gate.db")
+
+# Hard-deny shell access
+gate.register_policy("shell_exec", DenyPolicy(reason="shell access prohibited"))
+
+# Rate-limit web search to 10 calls per minute
+gate.register_policy("web_search", RateLimitPolicy(max_calls=10, window_seconds=60))
+
+# Allow file writes only to /tmp
+gate.register_policy(
+    "file_write",
+    ConditionalPolicy(
+        allow_if=lambda args: str(args.get("path", "")).startswith("/tmp/"),
+        deny_reason="writes outside /tmp are not permitted",
+    ),
+)
+
+# Use as a decorator
+@gate.wrap
+def my_tool(path: str) -> str:
+    ...
+
+# Audit log
+for entry in gate.decision_log(limit=50):
+    print(entry["tool"], entry["allowed"], entry["reason"])
+```
+
+### ToolPermissionLayer
+
+Declare what each agent is allowed to do — everything else is denied by default.
+
+```python
+from agentcop.permissions import (
+    ToolPermissionLayer,
+    ReadPermission, WritePermission,
+    NetworkPermission, ExecutePermission,
+)
+
+layer = ToolPermissionLayer()
+
+layer.declare("data-pipeline-agent", [
+    ReadPermission(paths=["/data/*", "/tmp/*"]),
+    WritePermission(paths=["/tmp/*"]),
+    NetworkPermission(domains=["api.openai.com"], allow_subdomains=True),
+])
+
+result = layer.verify("data-pipeline-agent", "file_write", {"path": "/etc/shadow"})
+# PermissionResult(granted=False, reason='path /etc/shadow not in allowed paths')
+
+# Attach to a gate to enforce automatically on every call
+layer.attach_to_gate(gate, agent_id="data-pipeline-agent")
+```
+
+### AgentSandbox
+
+Wraps agent execution with active syscall interception — patches `builtins.open`, `urllib.request.urlopen`, `subprocess.run`, and `requests.Session.request` while active.
+
+```python
+from agentcop.sandbox import AgentSandbox
+
+sandbox = AgentSandbox(
+    intercept_syscalls=True,
+    allowed_paths=["/tmp/*", "/data/read-only/*"],
+    allowed_domains=["api.openai.com"],
+    max_execution_time=30,   # raises SandboxTimeoutError if exceeded
+)
+
+with sandbox:
+    result = your_agent.run(task)
+    # open() to a path outside allowed_paths → SandboxViolation
+    # HTTP to a domain outside allowed_domains → SandboxViolation
+```
+
+### ApprovalBoundary
+
+Human-in-the-loop gate for high-risk actions. Auto-approves below the threshold, holds and notifies above it.
+
+```python
+from agentcop.approvals import ApprovalBoundary
+
+boundary = ApprovalBoundary(
+    requires_approval_above=70,
+    channels=["cli"],          # "cli", "webhook", "slack", or dict with "type"+"url"
+    timeout=300,               # auto-deny after 5 minutes
+    db_path="approvals.db",    # persistent audit trail
+)
+
+request = boundary.submit("delete_database", {"db": "prod"}, risk_score=90)
+# → dispatches to configured channels, blocks waiting for decision
+
+# From another thread or external webhook:
+boundary.approve(request.request_id, actor="alice", reason="confirmed safe migration")
+
+resolved = boundary.wait_for_decision(request.request_id)
+# ApprovalRequest(status='approved', ...)
+```
+
+### RUNTIME PROTECTED badge
+
+Agents running the full `AgentCop` stack earn the **RUNTIME PROTECTED** designation. Pass blocked violation counts under `"protected"` in the badge payload — a non-zero value renders the shield with the annotation and signals that violations were intercepted at runtime, not just detected after the fact.
+
+```python
+badge = issuer.issue(
+    agent_id="my-agent",
+    fingerprint=identity.fingerprint,
+    trust_score=92.0,
+    violations={"critical": 0, "warning": 0, "info": 3, "protected": 7},
+    framework="langgraph",
+    scan_count=88,
+)
+```
+
+See [docs/guides/runtime-security.md](docs/guides/runtime-security.md) for the complete guide including CLI reference, channel setup, and identity integration.
 
 ---
 

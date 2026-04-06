@@ -11,6 +11,82 @@ agentcop uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.4.7] — 2026-04-06
+
+### Added
+
+- **`ExecutionGate`** (`agentcop[runtime]`) — policy-based tool execution
+  control with a persistent SQLite audit log. Four policy types: `AllowPolicy`,
+  `DenyPolicy`, `ConditionalPolicy` (predicate over args dict), and
+  `RateLimitPolicy` (sliding-window, thread-safe). `ExecutionGate.wrap()`
+  decorator gates any callable; `ExecutionGate.check()` returns a
+  `GateDecision(allowed, reason, risk_score)`. Every decision is written to
+  the `gate_decisions` table for post-incident forensics.
+  `ExecutionGate.decision_log()` returns the most recent N entries.
+
+- **`ToolPermissionLayer`** (`agentcop[runtime]`) — declarative capability
+  scoping per agent, deny by default. Four built-in permission types:
+  `ReadPermission` (fnmatch path patterns), `WritePermission` (fnmatch path
+  patterns), `NetworkPermission` (domain allowlist with optional subdomain
+  matching via `allow_subdomains=True`), `ExecutePermission` (leading command
+  token allowlist). `ToolPermissionLayer.declare(agent_id, permissions)` sets
+  the capability scope; `verify(agent_id, tool, args)` returns a
+  `PermissionResult(granted, reason)`. `attach_to_gate(gate, agent_id)` wires
+  declared permissions into an `ExecutionGate` as `ConditionalPolicy` entries.
+  Emits `permission_violation` `SentinelEvent` on denial when a `Sentinel` is
+  attached.
+
+- **`AgentSandbox`** (`agentcop[runtime]`) — runtime isolation with active
+  syscall interception. Patches `builtins.open`, `urllib.request.urlopen`,
+  `subprocess.run`, and `requests.Session.request` (when installed) for the
+  duration of the `with` block. Enforces `allowed_paths` (fnmatch),
+  `allowed_domains`, and `max_execution_time` (raises `SandboxTimeoutError`
+  via `ctypes.pythonapi.PyThreadState_SetAsyncExc` if exceeded). Re-entrant
+  and thread-safe. Merges constraints from a `ToolPermissionLayer` via
+  `permission_layer` + `agent_id` constructor arguments. Lightweight
+  validation-only mode available via `ExecutionSandbox` +
+  `SandboxPolicy(allowed_paths, denied_paths, allowed_env_vars, denied_env_vars,
+  max_output_bytes)`.
+
+- **`ApprovalBoundary`** (`agentcop[runtime]`) — human-in-the-loop gate for
+  high-risk actions. Auto-approves calls with `risk_score <=
+  requires_approval_above`; holds and notifies for calls above the threshold.
+  Dispatches to configurable channels: `"cli"` (stderr prompt), `"webhook"`
+  (POST JSON), `"slack"` (Incoming Webhook), `"email"` (placeholder). Timeout
+  fires auto-deny after `timeout` seconds. Persistent audit trail in SQLite via
+  `db_path`. `wait_for_decision(request_id)` blocks the caller thread until
+  resolution. `audit_trail(request_id, limit)` returns newest-first log entries.
+  Raises `ApprovalDenied` on denial. In-memory `ApprovalGate` available for
+  testing (no SQLite, no channels).
+
+- **`AgentCop.protect()`** (`agentcop[runtime]`) — one-line full pipeline
+  protection. `AgentCop(gate, permissions, sandbox, approvals, sentinel,
+  agent_id, identity)` chains all four enforcement layers plus an `AgentIdentity`
+  trust guard into a single wrapper. `cop.protect(agent)` returns a
+  `_ProtectedAgent` that routes every `run()` call through a five-stage pipeline:
+  (1) trust guard — blocks if trust score < 30; (2) `ExecutionGate` check;
+  (3) `ToolPermissionLayer` verify; (4) `ApprovalBoundary` submit + wait;
+  (5) `AgentSandbox` context manager wrapping `agent.run()`. The wrapped agent
+  is otherwise a transparent proxy (`__getattr__` delegation). `all_layers_active`
+  is `True` when all four enforcement layers are configured.
+
+- **`docs/guides/runtime-security.md`** — complete runtime enforcement guide:
+  why runtime enforcement vs static scanning, `ExecutionGate` quickstart + all
+  four policy types with examples, `ToolPermissionLayer` quickstart + all four
+  permission types, `AgentSandbox` quickstart + intercepted syscall table +
+  validation-only mode, `ApprovalBoundary` quickstart + all three channel types
+  (CLI / webhook / Slack) + audit trail, full pipeline example, integration with
+  `AgentIdentity` and the badge system, CLI commands reference.
+
+- **`pip install agentcop[runtime]`** — new optional-dependency group for the
+  runtime security layer.
+
+### Tests
+
+- 1829 tests passing across the full suite.
+
+---
+
 ## [0.4.5] — 2026-04-03
 
 ### Added
@@ -222,7 +298,8 @@ agentcop uses [Semantic Versioning](https://semver.org/).
 - `DEFAULT_DETECTORS` list.
 - Optional OTel export via `agentcop[otel]`.
 
-[Unreleased]: https://github.com/trusthandoff/agentcop/compare/v0.4.5...HEAD
+[Unreleased]: https://github.com/trusthandoff/agentcop/compare/v0.4.7...HEAD
+[0.4.7]: https://github.com/trusthandoff/agentcop/compare/v0.4.5...v0.4.7
 [0.4.5]: https://github.com/trusthandoff/agentcop/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/trusthandoff/agentcop/compare/v0.2.0...v0.4.4
 [0.2.0]: https://github.com/trusthandoff/agentcop/compare/v0.1.9...v0.2.0

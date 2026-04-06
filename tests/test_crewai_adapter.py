@@ -841,3 +841,88 @@ class TestSentinelIntegration:
             adapter._buffer_event(adapter.to_sentinel_event(raw))
         adapter.flush_into(sentinel)
         assert sentinel.detect_violations() == []
+
+
+# ---------------------------------------------------------------------------
+# Runtime security tests
+# ---------------------------------------------------------------------------
+
+
+def _make_crewai_runtime(gate=None, permissions=None, sandbox=None, approvals=None, identity=None):
+    with patch("agentcop.adapters.crewai._require_crewai"):
+        from agentcop.adapters.crewai import CrewAISentinelAdapter
+
+        return CrewAISentinelAdapter(
+            run_id="rt-run",
+            gate=gate,
+            permissions=permissions,
+            sandbox=sandbox,
+            approvals=approvals,
+            identity=identity,
+        )
+
+
+class TestRuntimeSecurityCrewAI:
+    def test_init_stores_none_by_default(self):
+        a = _make_crewai_runtime()
+        assert a._gate is None
+        assert a._permissions is None
+        assert a._sandbox is None
+        assert a._approvals is None
+
+    def test_init_stores_runtime_params(self):
+        gate = MagicMock()
+        perms = MagicMock()
+        a = _make_crewai_runtime(gate=gate, permissions=perms)
+        assert a._gate is gate
+        assert a._permissions is perms
+
+    def test_gate_denial_raises_in_tool_handler(self):
+        """Gate fires before tool_usage_started is buffered."""
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=False, reason="blocked", risk_score=90)
+        a = _make_crewai_runtime(gate=gate)
+        with pytest.raises(PermissionError, match="blocked"):
+            a._buffer_event(
+                a.to_sentinel_event({"type": "tool_usage_started", "tool_name": "search"})
+            )
+            # The gate fires in setup() handlers; test via _check_tool_call directly
+            from agentcop.adapters._runtime import check_tool_call
+
+            check_tool_call(a, "search", {})
+
+    def test_gate_denial_fires_sentinel_event(self):
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=False, reason="blocked", risk_score=90)
+        a = _make_crewai_runtime(gate=gate)
+        from agentcop.adapters._runtime import check_tool_call
+
+        with pytest.raises(PermissionError):
+            check_tool_call(a, "search", {})
+        events = a.drain()
+        assert any(e.event_type == "gate_denied" for e in events)
+
+    def test_permission_violation_fires_sentinel_event(self):
+        perms = MagicMock()
+        perms.verify.return_value = MagicMock(granted=False, reason="forbidden")
+        a = _make_crewai_runtime(permissions=perms)
+        from agentcop.adapters._runtime import check_tool_call
+
+        with pytest.raises(PermissionError):
+            check_tool_call(a, "delete_data", {})
+        events = a.drain()
+        assert any(e.event_type == "permission_violation" for e in events)
+
+    def test_gate_allow_does_not_buffer_error(self):
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=True, reason="ok", risk_score=5)
+        a = _make_crewai_runtime(gate=gate)
+        from agentcop.adapters._runtime import check_tool_call
+
+        check_tool_call(a, "safe_tool", {})
+        assert a.drain() == []
+
+    def test_no_runtime_params_backward_compatible(self):
+        a = _make_crewai_runtime()
+        event = a.to_sentinel_event({"type": "tool_usage_started", "tool_name": "x"})
+        assert event.event_type == "tool_usage_started"

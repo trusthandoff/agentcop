@@ -60,6 +60,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from agentcop.adapters._runtime import check_tool_call, fire_security_event
 from agentcop.event import SentinelEvent
 
 
@@ -172,9 +173,23 @@ class DatadogSentinelAdapter:
 
     source_system = "datadog"
 
-    def __init__(self, run_id: str | None = None) -> None:
+    def __init__(
+        self,
+        run_id: str | None = None,
+        *,
+        gate=None,
+        permissions=None,
+        sandbox=None,
+        approvals=None,
+        identity=None,
+    ) -> None:
         _require_ddtrace()
         self._run_id = run_id
+        self._gate = gate
+        self._permissions = permissions
+        self._sandbox = sandbox
+        self._approvals = approvals
+        self._identity = identity
         self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
 
@@ -215,6 +230,20 @@ class DatadogSentinelAdapter:
             for span in spans or []:
                 try:
                     raw = _span_to_raw(span)
+                    # Log gate decision for LLM spans.
+                    if raw.get("type", "").startswith("llm_") and (
+                        adapter_self._gate or adapter_self._permissions
+                    ):
+                        span_name = raw.get("span_name", "unknown")
+                        try:
+                            check_tool_call(
+                                adapter_self,
+                                span_name,
+                                {"component": raw.get("component", "")},
+                                context={"service": raw.get("service", "")},
+                            )
+                        except PermissionError:
+                            pass  # already buffered as gate_denied / permission_violation
                     adapter_self._buffer_event(adapter_self.to_sentinel_event(raw))
                 except Exception:
                     pass  # never let adapter errors disrupt ddtrace export

@@ -70,6 +70,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from agentcop.adapters._runtime import check_tool_call, fire_security_event
 from agentcop.event import SentinelEvent
 
 
@@ -134,9 +135,23 @@ class LangfuseSentinelAdapter:
 
     source_system = "langfuse"
 
-    def __init__(self, run_id: str | None = None) -> None:
+    def __init__(
+        self,
+        run_id: str | None = None,
+        *,
+        gate=None,
+        permissions=None,
+        sandbox=None,
+        approvals=None,
+        identity=None,
+    ) -> None:
         _require_langfuse()
         self._run_id = run_id
+        self._gate = gate
+        self._permissions = permissions
+        self._sandbox = sandbox
+        self._approvals = approvals
+        self._identity = identity
         self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
 
@@ -171,8 +186,18 @@ class LangfuseSentinelAdapter:
         class _LangfuseObserver(SpanProcessor):
             def on_start(self, span, parent_context=None):
                 attrs = getattr(span, "attributes", None) or {}
-                if not attrs.get("langfuse.observation.type"):
+                obs_type = attrs.get("langfuse.observation.type")
+                if not obs_type:
                     return
+                # Log gate decisions for tool observations.
+                if obs_type in _TOOL_TYPES and (
+                    adapter_self._gate or adapter_self._permissions
+                ):
+                    span_name = getattr(span, "name", "unknown")
+                    try:
+                        check_tool_call(adapter_self, span_name, dict(attrs))
+                    except PermissionError:
+                        pass  # already buffered as gate_denied / permission_violation
                 raw = _span_to_raw_start(span)
                 if raw is not None:
                     adapter_self._buffer_event(adapter_self.to_sentinel_event(raw))

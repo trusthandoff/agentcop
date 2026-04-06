@@ -67,6 +67,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from agentcop.adapters._runtime import check_tool_call
 from agentcop.event import SentinelEvent
 
 
@@ -203,10 +204,22 @@ class MoltbookSentinelAdapter:
         self,
         agent_id: str | None = None,
         session_id: str | None = None,
+        *,
+        gate=None,
+        permissions=None,
+        sandbox=None,
+        approvals=None,
+        identity=None,
     ) -> None:
         # No _require_moltbook() here — adapter always works in manual mode without SDK
         self._agent_id = agent_id
         self._session_id = session_id
+        self._gate = gate
+        self._permissions = permissions
+        # Moltbook sandbox MUST block network calls outside moltbook.com when provided.
+        self._sandbox = sandbox
+        self._approvals = approvals
+        self._identity = identity
         self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
         self._badge_id: str | None = None
@@ -890,6 +903,14 @@ class MoltbookSentinelAdapter:
 
         event_type, severity, extra_attrs = self._classify_skill_event(raw)
         skill_name = extra_attrs.get("skill_name", "unknown")
+        if self._gate or self._permissions:
+            check_tool_call(
+                self,
+                skill_name,
+                {"skill_id": skill_id},
+                context={"framework": "moltbook"},
+                agent_id=self._agent_id or "default",
+            )
 
         if event_type == "skill_executed_unverified":
             body = (

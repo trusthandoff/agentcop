@@ -41,6 +41,7 @@ from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime
 from typing import Any
 
+from agentcop.adapters._runtime import check_tool_call, fire_security_event
 from agentcop.event import SentinelEvent
 
 
@@ -89,9 +90,28 @@ class LangGraphSentinelAdapter:
 
     source_system = "langgraph"
 
-    def __init__(self, thread_id: str | None = None) -> None:
+    def __init__(
+        self,
+        thread_id: str | None = None,
+        *,
+        gate=None,
+        permissions=None,
+        sandbox=None,
+        approvals=None,
+        identity=None,
+    ) -> None:
         _require_langgraph()
         self._thread_id = thread_id
+        self._gate = gate
+        self._permissions = permissions
+        self._sandbox = sandbox
+        self._approvals = approvals
+        self._identity = identity
+        # Buffer for runtime-security events (not used by normal translation).
+        import threading
+
+        self._buffer: list[SentinelEvent] = []
+        self._lock = threading.Lock()
 
     def to_sentinel_event(self, raw: dict[str, Any]) -> SentinelEvent:
         """Translate one LangGraph debug stream event dict into a SentinelEvent."""
@@ -105,9 +125,36 @@ class LangGraphSentinelAdapter:
         return self._from_unknown(raw)
 
     def iter_events(self, stream: Iterable[dict[str, Any]]) -> Iterator[SentinelEvent]:
-        """Yield a SentinelEvent for every event in a LangGraph debug stream."""
+        """Yield a SentinelEvent for every event in a LangGraph debug stream.
+
+        If *gate* or *permissions* were supplied at construction time, a
+        ``check_tool_call`` is performed for every ``task`` (node_start) event
+        before it is yielded.  A gate denial raises :class:`PermissionError`
+        and buffers a ``gate_denied`` SentinelEvent.
+        """
         for raw in stream:
+            event_type = raw.get("type", "")
+            if event_type == "task" and (self._gate or self._permissions):
+                payload = raw.get("payload") or {}
+                node_name = payload.get("name", "unknown")
+                check_tool_call(
+                    self,
+                    node_name,
+                    payload,
+                    context={"step": raw.get("step", 0)},
+                )
             yield self.to_sentinel_event(raw)
+
+    def drain(self) -> list[SentinelEvent]:
+        """Return all buffered runtime-security SentinelEvents and clear the buffer."""
+        with self._lock:
+            events = list(self._buffer)
+            self._buffer.clear()
+            return events
+
+    def flush_into(self, sentinel) -> None:
+        """Ingest all buffered runtime-security events into *sentinel*, then clear."""
+        sentinel.ingest(self.drain())
 
     # ------------------------------------------------------------------
     # Private translators

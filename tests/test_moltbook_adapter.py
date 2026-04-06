@@ -1223,3 +1223,84 @@ class TestThreadSafety:
             t.join()
 
         assert a._total_posts_received == n
+
+
+# ---------------------------------------------------------------------------
+# Runtime security tests
+# ---------------------------------------------------------------------------
+
+
+def _make_moltbook_runtime(gate=None, permissions=None, sandbox=None, approvals=None):
+    from agentcop.adapters.moltbook import MoltbookSentinelAdapter
+
+    return MoltbookSentinelAdapter(
+        agent_id="bot-1",
+        session_id="sess-1",
+        gate=gate,
+        permissions=permissions,
+        sandbox=sandbox,
+        approvals=approvals,
+    )
+
+
+_SKILL_RAW = {
+    "type": "skill_executed",
+    "skill_id": "sk-1",
+    "skill_name": "web_scraper",
+    "skill_manifest": {},
+}
+
+
+class TestRuntimeSecurityMoltbook:
+    def test_init_stores_none_by_default(self):
+        a = _make_moltbook_runtime()
+        assert a._gate is None
+        assert a._permissions is None
+        assert a._sandbox is None
+
+    def test_init_stores_runtime_params(self):
+        gate = MagicMock()
+        perms = MagicMock()
+        sandbox = MagicMock()
+        a = _make_moltbook_runtime(gate=gate, permissions=perms, sandbox=sandbox)
+        assert a._gate is gate
+        assert a._permissions is perms
+        assert a._sandbox is sandbox
+
+    def test_gate_denial_raises_on_skill_executed(self):
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=False, reason="blocked", risk_score=90)
+        a = _make_moltbook_runtime(gate=gate)
+        with pytest.raises(PermissionError, match="blocked"):
+            a.to_sentinel_event(_SKILL_RAW)
+
+    def test_gate_denial_buffers_event(self):
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=False, reason="blocked", risk_score=90)
+        a = _make_moltbook_runtime(gate=gate)
+        with pytest.raises(PermissionError):
+            a.to_sentinel_event(_SKILL_RAW)
+        events = a.drain()
+        assert any(e.event_type == "gate_denied" for e in events)
+
+    def test_permission_violation_on_skill(self):
+        perms = MagicMock()
+        perms.verify.return_value = MagicMock(granted=False, reason="forbidden")
+        a = _make_moltbook_runtime(permissions=perms)
+        with pytest.raises(PermissionError):
+            a.to_sentinel_event(_SKILL_RAW)
+        events = a.drain()
+        assert any(e.event_type == "permission_violation" for e in events)
+
+    def test_gate_allow_returns_skill_event(self):
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=True, reason="ok", risk_score=5)
+        a = _make_moltbook_runtime(gate=gate)
+        event = a.to_sentinel_event(_SKILL_RAW)
+        # Empty manifest → unverified; gate allowed so event is returned (not raised)
+        assert event.event_type in ("skill_executed", "skill_executed_unverified")
+
+    def test_no_gate_backward_compatible(self):
+        a = _make_moltbook_runtime()
+        event = a.to_sentinel_event({"type": "post_received", "post_id": "p1"})
+        assert event.event_type == "post_received"

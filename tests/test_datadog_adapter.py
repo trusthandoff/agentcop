@@ -1265,3 +1265,62 @@ class TestSentinelIntegration:
         events = adapter.drain()
         assert len(events) == 3
         assert all(e.trace_id == "multi" for e in events)
+
+
+# ---------------------------------------------------------------------------
+# Runtime security tests
+# ---------------------------------------------------------------------------
+
+
+def _make_datadog_runtime(gate=None, permissions=None, sandbox=None, approvals=None):
+    with patch("agentcop.adapters.datadog._require_ddtrace"):
+        from agentcop.adapters.datadog import DatadogSentinelAdapter
+
+        return DatadogSentinelAdapter(
+            run_id="rt-run",
+            gate=gate,
+            permissions=permissions,
+            sandbox=sandbox,
+            approvals=approvals,
+        )
+
+
+class TestRuntimeSecurityDatadog:
+    def test_init_stores_none_by_default(self):
+        a = _make_datadog_runtime()
+        assert a._gate is None
+        assert a._permissions is None
+
+    def test_init_stores_runtime_params(self):
+        gate = MagicMock()
+        perms = MagicMock()
+        a = _make_datadog_runtime(gate=gate, permissions=perms)
+        assert a._gate is gate
+        assert a._permissions is perms
+
+    def test_gate_denial_fires_event(self):
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=False, reason="blocked", risk_score=90)
+        a = _make_datadog_runtime(gate=gate)
+        from agentcop.adapters._runtime import check_tool_call
+
+        with pytest.raises(PermissionError):
+            check_tool_call(a, "openai.request", {})
+        events = a.drain()
+        assert any(e.event_type == "gate_denied" for e in events)
+
+    def test_permission_violation_fires_event(self):
+        perms = MagicMock()
+        perms.verify.return_value = MagicMock(granted=False, reason="denied")
+        a = _make_datadog_runtime(permissions=perms)
+        from agentcop.adapters._runtime import check_tool_call
+
+        with pytest.raises(PermissionError):
+            check_tool_call(a, "anthropic.request", {})
+        events = a.drain()
+        assert any(e.event_type == "permission_violation" for e in events)
+
+    def test_no_gate_backward_compatible(self):
+        a = _make_datadog_runtime()
+        event = a.to_sentinel_event({"type": "llm_span_finished", "span_name": "openai.chat"})
+        assert event.event_type == "llm_span_finished"

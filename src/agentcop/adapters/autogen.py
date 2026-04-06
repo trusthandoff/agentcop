@@ -57,6 +57,7 @@ from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime
 from typing import Any
 
+from agentcop.adapters._runtime import check_tool_call
 from agentcop.event import SentinelEvent
 
 
@@ -108,9 +109,23 @@ class AutoGenSentinelAdapter:
 
     source_system = "autogen"
 
-    def __init__(self, run_id: str | None = None) -> None:
+    def __init__(
+        self,
+        run_id: str | None = None,
+        *,
+        gate=None,
+        permissions=None,
+        sandbox=None,
+        approvals=None,
+        identity=None,
+    ) -> None:
         _require_autogen()
         self._run_id = run_id
+        self._gate = gate
+        self._permissions = permissions
+        self._sandbox = sandbox
+        self._approvals = approvals
+        self._identity = identity
         self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
 
@@ -487,6 +502,17 @@ class AutoGenSentinelAdapter:
         sender = raw.get("sender", "unknown")
         function_name = raw.get("function_name", "unknown")
         arguments = raw.get("arguments", "")
+        if self._gate or self._permissions:
+            args_dict: dict[str, Any] = (
+                {"arguments": arguments} if isinstance(arguments, str) else dict(arguments)
+            )
+            check_tool_call(
+                self,
+                function_name,
+                args_dict,
+                context={"sender": sender},
+                agent_id=sender,
+            )
         tool_call_id = raw.get("tool_call_id", "")
         attrs: dict[str, Any] = {
             "sender": sender,

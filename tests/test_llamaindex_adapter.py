@@ -984,3 +984,71 @@ class TestSentinelIntegration:
             adapter._buffer_event(adapter.to_sentinel_event(raw))
         adapter.flush_into(sentinel)
         assert sentinel.detect_violations() == []
+
+
+# ---------------------------------------------------------------------------
+# Runtime security tests
+# ---------------------------------------------------------------------------
+
+
+def _make_llamaindex_runtime(gate=None, permissions=None, sandbox=None, approvals=None):
+    with patch("agentcop.adapters.llamaindex._require_llamaindex"):
+        from agentcop.adapters.llamaindex import LlamaIndexSentinelAdapter
+
+        return LlamaIndexSentinelAdapter(
+            run_id="rt-run",
+            gate=gate,
+            permissions=permissions,
+            sandbox=sandbox,
+            approvals=approvals,
+        )
+
+
+class TestRuntimeSecurityLlamaIndex:
+    def test_init_stores_none_by_default(self):
+        a = _make_llamaindex_runtime()
+        assert a._gate is None
+        assert a._permissions is None
+
+    def test_init_stores_runtime_params(self):
+        gate = MagicMock()
+        perms = MagicMock()
+        a = _make_llamaindex_runtime(gate=gate, permissions=perms)
+        assert a._gate is gate
+        assert a._permissions is perms
+
+    def test_gate_denial_on_agent_tool_call_fires_event(self):
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=False, reason="blocked", risk_score=90)
+        a = _make_llamaindex_runtime(gate=gate)
+        from agentcop.adapters._runtime import check_tool_call
+
+        with pytest.raises(PermissionError):
+            check_tool_call(a, "web_search", {"query": "test"})
+        events = a.drain()
+        assert any(e.event_type == "gate_denied" for e in events)
+
+    def test_permission_violation_fires_event(self):
+        perms = MagicMock()
+        perms.verify.return_value = MagicMock(granted=False, reason="not permitted")
+        a = _make_llamaindex_runtime(permissions=perms)
+        from agentcop.adapters._runtime import check_tool_call
+
+        with pytest.raises(PermissionError):
+            check_tool_call(a, "file_reader", {})
+        events = a.drain()
+        assert any(e.event_type == "permission_violation" for e in events)
+
+    def test_gate_allow_does_not_buffer_error(self):
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=True, reason="ok", risk_score=0)
+        a = _make_llamaindex_runtime(gate=gate)
+        from agentcop.adapters._runtime import check_tool_call
+
+        check_tool_call(a, "safe_tool", {})
+        assert a.drain() == []
+
+    def test_no_gate_backward_compatible(self):
+        a = _make_llamaindex_runtime()
+        event = a.to_sentinel_event({"type": "agent_tool_call", "tool_name": "search"})
+        assert event.event_type == "agent_tool_call"

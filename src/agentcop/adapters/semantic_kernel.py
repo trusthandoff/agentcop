@@ -61,6 +61,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from agentcop.adapters._runtime import check_tool_call
 from agentcop.event import SentinelEvent
 
 
@@ -113,9 +114,23 @@ class SemanticKernelSentinelAdapter:
 
     source_system = "semantic_kernel"
 
-    def __init__(self, run_id: str | None = None) -> None:
+    def __init__(
+        self,
+        run_id: str | None = None,
+        *,
+        gate=None,
+        permissions=None,
+        sandbox=None,
+        approvals=None,
+        identity=None,
+    ) -> None:
         _require_semantic_kernel()
         self._run_id = run_id
+        self._gate = gate
+        self._permissions = permissions
+        self._sandbox = sandbox
+        self._approvals = approvals
+        self._identity = identity
         self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
 
@@ -150,6 +165,7 @@ class SemanticKernelSentinelAdapter:
             is_prompt = bool(getattr(context.function, "is_prompt", False))
             is_streaming = bool(getattr(context, "is_streaming", False))
 
+            arguments = _extract_arguments(context)
             adapter_self._buffer_event(
                 adapter_self.to_sentinel_event(
                     {
@@ -158,10 +174,18 @@ class SemanticKernelSentinelAdapter:
                         "function_name": function_name,
                         "is_prompt": is_prompt,
                         "is_streaming": is_streaming,
-                        "arguments": _extract_arguments(context),
+                        "arguments": arguments,
                     }
                 )
             )
+
+            if adapter_self._gate or adapter_self._permissions:
+                check_tool_call(
+                    adapter_self,
+                    f"{plugin_name}.{function_name}",
+                    dict(arguments),
+                    context={"is_prompt": is_prompt, "is_streaming": is_streaming},
+                )
 
             try:
                 await next(context)

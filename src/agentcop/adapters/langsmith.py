@@ -66,6 +66,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from agentcop.adapters._runtime import check_tool_call, fire_security_event
 from agentcop.event import SentinelEvent
 
 
@@ -128,9 +129,23 @@ class LangSmithSentinelAdapter:
 
     source_system = "langsmith"
 
-    def __init__(self, run_id: str | None = None) -> None:
+    def __init__(
+        self,
+        run_id: str | None = None,
+        *,
+        gate=None,
+        permissions=None,
+        sandbox=None,
+        approvals=None,
+        identity=None,
+    ) -> None:
         _require_langsmith()
         self._run_id = run_id
+        self._gate = gate
+        self._permissions = permissions
+        self._sandbox = sandbox
+        self._approvals = approvals
+        self._identity = identity
         self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
         # Maps run_id str → start-time snapshot for correlation with update_run
@@ -172,6 +187,19 @@ class LangSmithSentinelAdapter:
             name = (args[0] if len(args) > 0 else None) or kwargs.get("name", "unknown")
             inputs = (args[1] if len(args) > 1 else None) or kwargs.get("inputs") or {}
             run_type = (args[2] if len(args) > 2 else None) or kwargs.get("run_type", "chain")
+            # Log gate decision for tool runs.
+            if run_type in _TOOL_TYPES and (
+                adapter_self._gate or adapter_self._permissions
+            ):
+                try:
+                    check_tool_call(
+                        adapter_self,
+                        str(name),
+                        dict(inputs) if isinstance(inputs, dict) else {},
+                        context={"run_type": run_type},
+                    )
+                except PermissionError:
+                    pass  # already buffered as gate_denied / permission_violation
 
             run_id = str(kwargs.get("id") or "")
             trace_id = str(kwargs.get("trace_id") or run_id)

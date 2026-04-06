@@ -1110,3 +1110,64 @@ class TestSentinelIntegration:
         )
         violations = sentinel.detect_violations()
         assert len(violations) == 2
+
+
+# ---------------------------------------------------------------------------
+# Runtime security tests
+# ---------------------------------------------------------------------------
+
+
+def _make_haystack_runtime(gate=None, permissions=None, sandbox=None, approvals=None):
+    with patch("agentcop.adapters.haystack._require_haystack"):
+        from agentcop.adapters.haystack import HaystackSentinelAdapter
+
+        return HaystackSentinelAdapter(
+            run_id="rt-run",
+            gate=gate,
+            permissions=permissions,
+            sandbox=sandbox,
+            approvals=approvals,
+        )
+
+
+class TestRuntimeSecurityHaystack:
+    def test_init_stores_none_by_default(self):
+        a = _make_haystack_runtime()
+        assert a._gate is None
+        assert a._permissions is None
+
+    def test_init_stores_runtime_params(self):
+        gate = MagicMock()
+        perms = MagicMock()
+        sandbox = MagicMock()
+        a = _make_haystack_runtime(gate=gate, permissions=perms, sandbox=sandbox)
+        assert a._gate is gate
+        assert a._permissions is perms
+        assert a._sandbox is sandbox
+
+    def test_gate_denial_fires_event(self):
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=False, reason="blocked", risk_score=90)
+        a = _make_haystack_runtime(gate=gate)
+        from agentcop.adapters._runtime import check_tool_call
+
+        with pytest.raises(PermissionError):
+            check_tool_call(a, "OpenAIGenerator", {})
+        events = a.drain()
+        assert any(e.event_type == "gate_denied" for e in events)
+
+    def test_permission_violation_fires_event(self):
+        perms = MagicMock()
+        perms.verify.return_value = MagicMock(granted=False, reason="forbidden")
+        a = _make_haystack_runtime(permissions=perms)
+        from agentcop.adapters._runtime import check_tool_call
+
+        with pytest.raises(PermissionError):
+            check_tool_call(a, "DocumentRetriever", {})
+        events = a.drain()
+        assert any(e.event_type == "permission_violation" for e in events)
+
+    def test_no_gate_backward_compatible(self):
+        a = _make_haystack_runtime()
+        event = a.to_sentinel_event({"type": "pipeline_started", "pipeline_name": "p"})
+        assert event.event_type == "pipeline_started"

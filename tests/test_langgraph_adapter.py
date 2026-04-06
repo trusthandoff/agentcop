@@ -614,3 +614,123 @@ class TestSentinelIntegration:
         sentinel.ingest(a.iter_events(stream))
         events_ingested = list(a.iter_events(stream))
         assert all(e.trace_id == "run-xyz" for e in events_ingested)
+
+
+# ---------------------------------------------------------------------------
+# Runtime security tests
+# ---------------------------------------------------------------------------
+
+
+def _make_adapter_runtime(gate=None, permissions=None, sandbox=None, approvals=None, identity=None):
+    with patch("agentcop.adapters.langgraph._require_langgraph"):
+        from agentcop.adapters.langgraph import LangGraphSentinelAdapter
+
+        return LangGraphSentinelAdapter(
+            thread_id="rt-thread",
+            gate=gate,
+            permissions=permissions,
+            sandbox=sandbox,
+            approvals=approvals,
+            identity=identity,
+        )
+
+
+_TASK_RAW = {
+    "type": "task",
+    "step": 1,
+    "payload": {"name": "my_node", "id": "t-1", "triggers": [], "metadata": {}},
+}
+
+
+class TestRuntimeSecurityLangGraph:
+    def test_init_stores_none_by_default(self):
+        a = _make_adapter_runtime()
+        assert a._gate is None
+        assert a._permissions is None
+        assert a._sandbox is None
+        assert a._approvals is None
+        assert a._identity is None
+
+    def test_init_stores_runtime_params(self):
+        gate = MagicMock()
+        perms = MagicMock()
+        sandbox = MagicMock()
+        approvals = MagicMock()
+        identity = MagicMock()
+        a = _make_adapter_runtime(
+            gate=gate, permissions=perms, sandbox=sandbox,
+            approvals=approvals, identity=identity,
+        )
+        assert a._gate is gate
+        assert a._permissions is perms
+        assert a._sandbox is sandbox
+        assert a._approvals is approvals
+        assert a._identity is identity
+
+    def test_gate_denial_raises_permission_error(self):
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=False, reason="blocked", risk_score=90)
+        a = _make_adapter_runtime(gate=gate)
+        with pytest.raises(PermissionError, match="blocked"):
+            list(a.iter_events([_TASK_RAW]))
+
+    def test_gate_denial_buffers_gate_denied_event(self):
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=False, reason="blocked", risk_score=90)
+        a = _make_adapter_runtime(gate=gate)
+        with pytest.raises(PermissionError):
+            list(a.iter_events([_TASK_RAW]))
+        events = a.drain()
+        assert any(e.event_type == "gate_denied" for e in events)
+
+    def test_permission_violation_raises_permission_error(self):
+        perms = MagicMock()
+        perms.verify.return_value = MagicMock(granted=False, reason="not allowed")
+        a = _make_adapter_runtime(permissions=perms)
+        with pytest.raises(PermissionError, match="not allowed"):
+            list(a.iter_events([_TASK_RAW]))
+
+    def test_permission_violation_fires_sentinel_event(self):
+        perms = MagicMock()
+        perms.verify.return_value = MagicMock(granted=False, reason="not allowed")
+        a = _make_adapter_runtime(permissions=perms)
+        with pytest.raises(PermissionError):
+            list(a.iter_events([_TASK_RAW]))
+        events = a.drain()
+        assert any(e.event_type == "permission_violation" for e in events)
+
+    def test_gate_allow_passes_through_normally(self):
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=True, reason="ok", risk_score=10)
+        a = _make_adapter_runtime(gate=gate)
+        results = list(a.iter_events([_TASK_RAW]))
+        assert len(results) == 1
+        assert results[0].event_type == "node_start"
+
+    def test_no_gate_no_check(self):
+        a = _make_adapter_runtime()
+        results = list(a.iter_events([_TASK_RAW]))
+        assert len(results) == 1
+
+    def test_drain_returns_security_events(self):
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=False, reason="denied", risk_score=99)
+        a = _make_adapter_runtime(gate=gate)
+        with pytest.raises(PermissionError):
+            list(a.iter_events([_TASK_RAW]))
+        drained = a.drain()
+        assert len(drained) >= 1
+        assert drained[0].source_system == "langgraph"
+
+    def test_approval_requested_when_risk_high(self):
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=True, reason="ok", risk_score=95)
+        approvals = MagicMock()
+        approvals.requires_approval_above = 70
+        req = MagicMock(request_id="req-1", denied=False)
+        approvals.submit.return_value = req
+        approvals.wait_for_decision.return_value = MagicMock(denied=False, reason="approved")
+        a = _make_adapter_runtime(gate=gate, approvals=approvals)
+        list(a.iter_events([_TASK_RAW]))
+        approvals.submit.assert_called_once()
+        approvals.wait_for_decision.assert_called_once()

@@ -1183,3 +1183,62 @@ class TestSentinelIntegration:
         assert "retriever_finished" in types
         assert "llm_finished" in types
         assert "chain_finished" in types
+
+
+# ---------------------------------------------------------------------------
+# Runtime security tests
+# ---------------------------------------------------------------------------
+
+
+def _make_langsmith_runtime(gate=None, permissions=None, sandbox=None, approvals=None):
+    with patch("agentcop.adapters.langsmith._require_langsmith"):
+        from agentcop.adapters.langsmith import LangSmithSentinelAdapter
+
+        return LangSmithSentinelAdapter(
+            run_id="rt-run",
+            gate=gate,
+            permissions=permissions,
+            sandbox=sandbox,
+            approvals=approvals,
+        )
+
+
+class TestRuntimeSecurityLangSmith:
+    def test_init_stores_none_by_default(self):
+        a = _make_langsmith_runtime()
+        assert a._gate is None
+        assert a._permissions is None
+
+    def test_init_stores_runtime_params(self):
+        gate = MagicMock()
+        perms = MagicMock()
+        a = _make_langsmith_runtime(gate=gate, permissions=perms)
+        assert a._gate is gate
+        assert a._permissions is perms
+
+    def test_gate_denial_fires_event(self):
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=False, reason="blocked", risk_score=90)
+        a = _make_langsmith_runtime(gate=gate)
+        from agentcop.adapters._runtime import check_tool_call
+
+        with pytest.raises(PermissionError):
+            check_tool_call(a, "search_tool", {})
+        events = a.drain()
+        assert any(e.event_type == "gate_denied" for e in events)
+
+    def test_permission_violation_fires_event(self):
+        perms = MagicMock()
+        perms.verify.return_value = MagicMock(granted=False, reason="denied")
+        a = _make_langsmith_runtime(permissions=perms)
+        from agentcop.adapters._runtime import check_tool_call
+
+        with pytest.raises(PermissionError):
+            check_tool_call(a, "delete_run", {})
+        events = a.drain()
+        assert any(e.event_type == "permission_violation" for e in events)
+
+    def test_no_gate_backward_compatible(self):
+        a = _make_langsmith_runtime()
+        event = a.to_sentinel_event({"type": "run_started", "run_name": "x", "run_type": "chain"})
+        assert event.event_type == "run_started"

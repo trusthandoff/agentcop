@@ -54,6 +54,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from agentcop.adapters._runtime import check_tool_call
 from agentcop.event import SentinelEvent
 
 
@@ -110,9 +111,23 @@ class LlamaIndexSentinelAdapter:
 
     source_system = "llamaindex"
 
-    def __init__(self, run_id: str | None = None) -> None:
+    def __init__(
+        self,
+        run_id: str | None = None,
+        *,
+        gate=None,
+        permissions=None,
+        sandbox=None,
+        approvals=None,
+        identity=None,
+    ) -> None:
         _require_llamaindex()
         self._run_id = run_id
+        self._gate = gate
+        self._permissions = permissions
+        self._sandbox = sandbox
+        self._approvals = approvals
+        self._identity = identity
         self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
 
@@ -231,10 +246,18 @@ class LlamaIndexSentinelAdapter:
                     }
                 elif isinstance(event, AgentToolCallEvent):
                     tool = getattr(event, "tool", None)
+                    tool_name = getattr(tool, "name", "unknown") if tool else "unknown"
+                    tool_input = str(getattr(event, "arguments", "") or "")
+                    if adapter_self._gate or adapter_self._permissions:
+                        check_tool_call(
+                            adapter_self,
+                            tool_name,
+                            {"tool_input": tool_input[:500]},
+                        )
                     raw = {
                         "type": "agent_tool_call",
-                        "tool_name": getattr(tool, "name", "unknown") if tool else "unknown",
-                        "tool_input": str(getattr(event, "arguments", "") or "")[:500],
+                        "tool_name": tool_name,
+                        "tool_input": tool_input[:500],
                         "timestamp": ts,
                     }
                 elif isinstance(event, EmbeddingStartEvent):

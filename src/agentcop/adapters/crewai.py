@@ -48,6 +48,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from agentcop.adapters._runtime import check_tool_call
 from agentcop.event import SentinelEvent
 
 
@@ -101,9 +102,23 @@ class CrewAISentinelAdapter:
 
     source_system = "crewai"
 
-    def __init__(self, run_id: str | None = None) -> None:
+    def __init__(
+        self,
+        run_id: str | None = None,
+        *,
+        gate=None,
+        permissions=None,
+        sandbox=None,
+        approvals=None,
+        identity=None,
+    ) -> None:
         _require_crewai()
         self._run_id = run_id
+        self._gate = gate
+        self._permissions = permissions
+        self._sandbox = sandbox
+        self._approvals = approvals
+        self._identity = identity
         self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
 
@@ -265,13 +280,23 @@ class CrewAISentinelAdapter:
         @bus.on(ToolUsageStartedEvent)
         def _on_tool_started(source, event):
             tool = getattr(event, "tool", None)
+            tool_name = getattr(tool, "name", str(tool)) if tool else "unknown"
+            agent_role = _name(source)
+            if self._gate or self._permissions:
+                check_tool_call(
+                    self,
+                    tool_name,
+                    {},
+                    context={"agent_role": agent_role},
+                    agent_id=agent_role,
+                )
             self._buffer_event(
                 self.to_sentinel_event(
                     {
                         "type": "tool_usage_started",
                         "timestamp": _ts(event),
-                        "tool_name": getattr(tool, "name", str(tool)) if tool else "unknown",
-                        "agent_role": _name(source),
+                        "tool_name": tool_name,
+                        "agent_role": agent_role,
                     }
                 )
             )

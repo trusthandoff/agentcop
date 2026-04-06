@@ -60,6 +60,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from agentcop.adapters._runtime import check_tool_call
 from agentcop.event import SentinelEvent
 
 
@@ -150,9 +151,23 @@ class HaystackSentinelAdapter:
 
     source_system = "haystack"
 
-    def __init__(self, run_id: str | None = None) -> None:
+    def __init__(
+        self,
+        run_id: str | None = None,
+        *,
+        gate=None,
+        permissions=None,
+        sandbox=None,
+        approvals=None,
+        identity=None,
+    ) -> None:
         _require_haystack()
         self._run_id = run_id
+        self._gate = gate
+        self._permissions = permissions
+        self._sandbox = sandbox
+        self._approvals = approvals
+        self._identity = identity
         self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
 
@@ -197,6 +212,14 @@ class HaystackSentinelAdapter:
                 # --- start event ---
                 raw_start = _op_to_raw(operation_name, init_tags, "start")
                 if raw_start is not None:
+                    if adapter_self._gate or adapter_self._permissions:
+                        comp_name = init_tags.get("haystack.component.name", operation_name)
+                        check_tool_call(
+                            adapter_self,
+                            comp_name,
+                            init_tags,
+                            context={"operation": operation_name},
+                        )
                     adapter_self._buffer_event(adapter_self.to_sentinel_event(raw_start))
 
                 # Delegate to the previously registered tracer (if any).
@@ -209,9 +232,15 @@ class HaystackSentinelAdapter:
 
                 proxy = _SpanProxy(None)
                 try:
-                    with inner_cm as real_span:
-                        proxy = _SpanProxy(real_span)
-                        yield proxy
+                    if adapter_self._sandbox is not None:
+                        with adapter_self._sandbox:
+                            with inner_cm as real_span:
+                                proxy = _SpanProxy(real_span)
+                                yield proxy
+                    else:
+                        with inner_cm as real_span:
+                            proxy = _SpanProxy(real_span)
+                            yield proxy
 
                     # --- end event (normal exit) ---
                     raw_end = _op_to_raw(operation_name, init_tags, "end", span_tags=proxy._tags)

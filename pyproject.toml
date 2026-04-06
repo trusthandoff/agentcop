@@ -76,6 +76,9 @@ moltbook = [
 badge = [
     "cryptography>=41.0",
 ]
+runtime = [
+    "pydantic>=2.7,<3",
+]
 dev = [
     "pytest",
 ]

@@ -1149,3 +1149,71 @@ class TestSentinelIntegration:
             detectors=[detect_any_error],
         )
         assert len(s.detect_violations()) == 2
+
+
+# ---------------------------------------------------------------------------
+# Runtime security tests
+# ---------------------------------------------------------------------------
+
+
+def _make_sk_runtime(gate=None, permissions=None, sandbox=None, approvals=None):
+    with patch("agentcop.adapters.semantic_kernel._require_semantic_kernel"):
+        from agentcop.adapters.semantic_kernel import SemanticKernelSentinelAdapter
+
+        return SemanticKernelSentinelAdapter(
+            run_id="rt-run",
+            gate=gate,
+            permissions=permissions,
+            sandbox=sandbox,
+            approvals=approvals,
+        )
+
+
+class TestRuntimeSecuritySemanticKernel:
+    def test_init_stores_none_by_default(self):
+        a = _make_sk_runtime()
+        assert a._gate is None
+        assert a._permissions is None
+
+    def test_init_stores_runtime_params(self):
+        gate = MagicMock()
+        perms = MagicMock()
+        a = _make_sk_runtime(gate=gate, permissions=perms)
+        assert a._gate is gate
+        assert a._permissions is perms
+
+    def test_gate_denial_fires_event(self):
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=False, reason="blocked", risk_score=90)
+        a = _make_sk_runtime(gate=gate)
+        from agentcop.adapters._runtime import check_tool_call
+
+        with pytest.raises(PermissionError):
+            check_tool_call(a, "SearchPlugin.Search", {"query": "test"})
+        events = a.drain()
+        assert any(e.event_type == "gate_denied" for e in events)
+
+    def test_permission_violation_fires_event(self):
+        perms = MagicMock()
+        perms.verify.return_value = MagicMock(granted=False, reason="not permitted")
+        a = _make_sk_runtime(permissions=perms)
+        from agentcop.adapters._runtime import check_tool_call
+
+        with pytest.raises(PermissionError):
+            check_tool_call(a, "EmailPlugin.Send", {})
+        events = a.drain()
+        assert any(e.event_type == "permission_violation" for e in events)
+
+    def test_gate_allow_passes_through(self):
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=True, reason="ok", risk_score=5)
+        a = _make_sk_runtime(gate=gate)
+        from agentcop.adapters._runtime import check_tool_call
+
+        check_tool_call(a, "SafePlugin.Func", {})
+        assert a.drain() == []
+
+    def test_no_gate_backward_compatible(self):
+        a = _make_sk_runtime()
+        event = a.to_sentinel_event({"type": "function_invoking", "plugin_name": "P", "function_name": "F"})
+        assert event.event_type == "function_invoking"

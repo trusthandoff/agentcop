@@ -1118,3 +1118,100 @@ class TestSentinelIntegration:
             adapter._buffer_event(adapter.to_sentinel_event(raw))
         adapter.flush_into(sentinel)
         assert sentinel.detect_violations() == []
+
+
+# ---------------------------------------------------------------------------
+# Runtime security tests
+# ---------------------------------------------------------------------------
+
+
+def _make_autogen_runtime(gate=None, permissions=None, sandbox=None, approvals=None):
+    with patch("agentcop.adapters.autogen._require_autogen"):
+        from agentcop.adapters.autogen import AutoGenSentinelAdapter
+
+        return AutoGenSentinelAdapter(
+            run_id="rt-run",
+            gate=gate,
+            permissions=permissions,
+            sandbox=sandbox,
+            approvals=approvals,
+        )
+
+
+_FUNC_CALL_RAW = {
+    "type": "function_call_started",
+    "sender": "AssistantAgent",
+    "function_name": "search_web",
+    "arguments": '{"query": "test"}',
+}
+
+
+class TestRuntimeSecurityAutoGen:
+    def test_init_stores_none_by_default(self):
+        a = _make_autogen_runtime()
+        assert a._gate is None
+        assert a._permissions is None
+        assert a._sandbox is None
+        assert a._approvals is None
+
+    def test_init_stores_runtime_params(self):
+        gate = MagicMock()
+        perms = MagicMock()
+        a = _make_autogen_runtime(gate=gate, permissions=perms)
+        assert a._gate is gate
+        assert a._permissions is perms
+
+    def test_gate_denial_raises_on_function_call(self):
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=False, reason="blocked", risk_score=90)
+        a = _make_autogen_runtime(gate=gate)
+        with pytest.raises(PermissionError, match="blocked"):
+            a.to_sentinel_event(_FUNC_CALL_RAW)
+
+    def test_gate_denial_fires_gate_denied_event(self):
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=False, reason="blocked", risk_score=90)
+        a = _make_autogen_runtime(gate=gate)
+        with pytest.raises(PermissionError):
+            a.to_sentinel_event(_FUNC_CALL_RAW)
+        events = a.drain()
+        assert any(e.event_type == "gate_denied" for e in events)
+
+    def test_permission_violation_on_function_call(self):
+        perms = MagicMock()
+        perms.verify.return_value = MagicMock(granted=False, reason="restricted")
+        a = _make_autogen_runtime(permissions=perms)
+        with pytest.raises(PermissionError, match="restricted"):
+            a.to_sentinel_event(_FUNC_CALL_RAW)
+        events = a.drain()
+        assert any(e.event_type == "permission_violation" for e in events)
+
+    def test_gate_allow_returns_normal_event(self):
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=True, reason="ok", risk_score=5)
+        a = _make_autogen_runtime(gate=gate)
+        event = a.to_sentinel_event(_FUNC_CALL_RAW)
+        assert event.event_type == "function_call_started"
+
+    def test_no_gate_no_interception(self):
+        a = _make_autogen_runtime()
+        event = a.to_sentinel_event(_FUNC_CALL_RAW)
+        assert event.event_type == "function_call_started"
+
+    def test_sandbox_stored_on_adapter(self):
+        sandbox = MagicMock()
+        a = _make_autogen_runtime(sandbox=sandbox)
+        assert a._sandbox is sandbox
+
+    def test_approval_boundary_wait_on_high_risk(self):
+        gate = MagicMock()
+        gate.check.return_value = MagicMock(allowed=True, reason="ok", risk_score=80)
+        approvals = MagicMock()
+        approvals.requires_approval_above = 70
+        req = MagicMock(request_id="req-1")
+        approvals.submit.return_value = req
+        approvals.wait_for_decision.return_value = MagicMock(denied=False, reason="approved")
+        a = _make_autogen_runtime(gate=gate, approvals=approvals)
+        a.to_sentinel_event(_FUNC_CALL_RAW)
+        approvals.submit.assert_called_once()
+        approvals.wait_for_decision.assert_called_once()

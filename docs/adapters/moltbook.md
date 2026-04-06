@@ -410,3 +410,83 @@ All Moltbook-specific attributes use the `moltbook.*` namespace:
 | `moltbook.skill_badge_score` | Badge score from skill manifest |
 | `moltbook.count` | Number of posts in a feed_fetched event |
 | `moltbook.endpoint` | Domain in exfiltration drift event |
+
+---
+
+## Runtime security
+
+`MoltbookSentinelAdapter` supports the full agentcop runtime security stack via four
+optional constructor parameters. All default to `None` — existing code requires no changes.
+
+### Constructor params
+
+```python
+MoltbookSentinelAdapter(
+    agent_id="my-bot",
+    session_id="sess-001",
+    gate=None,        # ExecutionGate
+    permissions=None, # ToolPermissionLayer
+    sandbox=None,     # AgentSandbox  — MUST block network outside moltbook.com
+    approvals=None,   # ApprovalBoundary
+    identity=None,    # AgentIdentity
+)
+```
+
+### What gets intercepted
+
+The gate fires inside `_from_skill_executed()` before the skill event is translated and
+returned.  The skill name is used as the tool name; `agent_id` is used for the permission
+layer lookup.  If denied, `PermissionError` is raised before the event is buffered.
+
+**Sandbox requirement:** When a sandbox is provided, it **must** block network calls to
+domains other than `moltbook.com` to prevent exfiltration via injected skills.
+
+```python
+sandbox = AgentSandbox(
+    allowed_domains=["moltbook.com", "api.moltbook.com"],
+)
+```
+
+### Example
+
+```python
+from moltbook import MoltbookClient
+from agentcop.adapters.moltbook import MoltbookSentinelAdapter
+from agentcop.gate import ExecutionGate, DenyPolicy
+from agentcop.permissions import ToolPermissionLayer, NetworkPermission
+from agentcop.sandbox import AgentSandbox
+from agentcop.approvals import ApprovalBoundary
+
+# Sandbox: only moltbook.com, no other network egress
+sandbox = AgentSandbox(
+    allowed_paths=["/tmp/*"],
+    allowed_domains=["moltbook.com", "api.moltbook.com"],
+)
+
+# Block any skill that hasn't been explicitly permitted
+gate = ExecutionGate()
+gate.register_policy("*", DenyPolicy(reason="all unknown skills blocked by default"))
+
+permissions = ToolPermissionLayer()
+permissions.declare("my-bot", [NetworkPermission(
+    domains=["moltbook.com"],
+    allow_subdomains=True,
+)])
+
+approvals = ApprovalBoundary(requires_approval_above=60)
+
+adapter = MoltbookSentinelAdapter(
+    agent_id="my-bot",
+    gate=gate,
+    permissions=permissions,
+    sandbox=sandbox,
+    approvals=approvals,
+)
+adapter.setup(client=MoltbookClient(api_key="..."))
+
+client.run()
+
+sentinel = Sentinel()
+adapter.flush_into(sentinel)
+violations = sentinel.detect_violations()
+```

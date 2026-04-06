@@ -438,3 +438,62 @@ set at construction time; `output` is empty (not yet populated at start).
 **Class attribute**
 
 - `source_system = "langfuse"` — appears on every translated `SentinelEvent`.
+
+---
+
+## Runtime security
+
+`LangfuseSentinelAdapter` supports the full agentcop runtime security stack via four
+optional constructor parameters. All default to `None` — existing code requires no changes.
+
+### Constructor params
+
+```python
+LangfuseSentinelAdapter(
+    run_id="run-001",
+    gate=None,        # ExecutionGate
+    permissions=None, # ToolPermissionLayer
+    sandbox=None,     # AgentSandbox
+    approvals=None,   # ApprovalBoundary
+    identity=None,    # AgentIdentity
+)
+```
+
+### What gets intercepted (observability adapter)
+
+Langfuse is an observability adapter — it observes what happened rather than controlling
+what executes.  When gate/permissions are provided, the gate is checked inside the
+`SpanProcessor.on_start()` callback for **tool-type observations** (`langfuse.observation.type = "tool"`).
+
+Gate decisions are logged as `gate_denied` or `permission_violation` SentinelEvents in the
+adapter buffer.  The `PermissionError` is caught internally so the Langfuse OTel
+infrastructure is never disrupted.  Use `adapter.drain()` to retrieve security events.
+
+### Example
+
+```python
+from langfuse import Langfuse
+from agentcop.adapters.langfuse import LangfuseSentinelAdapter
+from agentcop.gate import ExecutionGate, ConditionalPolicy
+from agentcop.permissions import ToolPermissionLayer, NetworkPermission
+
+langfuse = Langfuse()
+
+gate = ExecutionGate()
+gate.register_policy("*", ConditionalPolicy(
+    allow_if=lambda args: True,
+    deny_reason="unknown tool",
+))
+
+adapter = LangfuseSentinelAdapter(
+    run_id="run-001",
+    gate=gate,
+)
+adapter.setup(langfuse)
+
+# ... run your Langfuse-instrumented code ...
+
+sentinel = Sentinel()
+adapter.flush_into(sentinel)
+violations = sentinel.detect_violations()
+```

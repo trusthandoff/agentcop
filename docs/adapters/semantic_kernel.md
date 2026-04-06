@@ -431,3 +431,77 @@ if violations:
 
 - `source_system = "semantic_kernel"` — appears on every translated
   `SentinelEvent`.
+
+---
+
+## Runtime security
+
+`SemanticKernelSentinelAdapter` supports the full agentcop runtime security stack via four
+optional constructor parameters. All default to `None` — existing code requires no changes.
+
+### Constructor params
+
+```python
+SemanticKernelSentinelAdapter(
+    run_id="run-001",
+    gate=None,        # ExecutionGate
+    permissions=None, # ToolPermissionLayer
+    sandbox=None,     # AgentSandbox
+    approvals=None,   # ApprovalBoundary
+    identity=None,    # AgentIdentity
+)
+```
+
+### What gets intercepted
+
+The gate fires inside **`_function_invocation_filter`** — the Semantic Kernel filter
+registered by `setup(kernel)` — immediately after emitting the `function_invoking` event
+and before `await next(context)` is called.  The full qualified name `"plugin.function"`
+is used as the tool name.  If denied, `PermissionError` is raised from inside the filter,
+which Semantic Kernel propagates as an error through the invocation stack.
+
+Note: SK uses async filters. The gate check itself is synchronous (no `await`), so it
+integrates cleanly. Sandbox wrapping around `await next(context)` requires thread-safe
+sandboxes — use `AgentSandbox` with care in async contexts.
+
+### Example
+
+```python
+import asyncio
+from semantic_kernel import Kernel
+from agentcop.adapters.semantic_kernel import SemanticKernelSentinelAdapter
+from agentcop.gate import ExecutionGate, ConditionalPolicy
+from agentcop.permissions import ToolPermissionLayer, NetworkPermission
+from agentcop.approvals import ApprovalBoundary
+
+kernel = Kernel()
+# ... add plugins and AI services ...
+
+gate = ExecutionGate()
+gate.register_policy("WebPlugin.Search", ConditionalPolicy(
+    allow_if=lambda args: True,
+    deny_reason="web search is disabled",
+))
+
+permissions = ToolPermissionLayer()
+permissions.declare("default", [NetworkPermission(domains=["api.openai.com"])])
+
+approvals = ApprovalBoundary(requires_approval_above=75)
+
+adapter = SemanticKernelSentinelAdapter(
+    run_id="run-001",
+    gate=gate,
+    permissions=permissions,
+    approvals=approvals,
+)
+adapter.setup(kernel)
+
+async def main():
+    result = await kernel.invoke("MyPlugin", "MyFunction", input="hello")
+    sentinel = Sentinel()
+    adapter.flush_into(sentinel)
+    violations = sentinel.detect_violations()
+    sentinel.report()
+
+asyncio.run(main())
+```

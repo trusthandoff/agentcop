@@ -366,3 +366,61 @@ if violations:
 **Class attribute**
 
 - `source_system = "crewai"` — appears on every translated `SentinelEvent`.
+
+---
+
+## Runtime security
+
+`CrewAISentinelAdapter` supports the full agentcop runtime security stack via four optional
+constructor parameters. All default to `None` — existing code requires no changes.
+
+### Constructor params
+
+```python
+CrewAISentinelAdapter(
+    run_id="run-001",
+    gate=None,        # ExecutionGate
+    permissions=None, # ToolPermissionLayer
+    sandbox=None,     # AgentSandbox
+    approvals=None,   # ApprovalBoundary
+    identity=None,    # AgentIdentity
+)
+```
+
+### What gets intercepted
+
+The gate fires inside the **`ToolUsageStartedEvent`** handler, before the translated event
+is buffered.  The agent's role string is used as `agent_id` for the `ToolPermissionLayer`
+lookup.  If denied, `PermissionError` is raised and a `gate_denied` or
+`permission_violation` SentinelEvent is buffered.
+
+### Example
+
+```python
+from agentcop.adapters.crewai import CrewAISentinelAdapter
+from agentcop.gate import ExecutionGate, DenyPolicy
+from agentcop.permissions import ToolPermissionLayer, ExecutePermission
+from agentcop.approvals import ApprovalBoundary
+
+gate = ExecutionGate()
+gate.register_policy("shell_exec", DenyPolicy(reason="shell execution is prohibited"))
+
+permissions = ToolPermissionLayer()
+permissions.declare("Researcher", [ExecutePermission(commands=[])])  # deny all execution
+
+approvals = ApprovalBoundary(requires_approval_above=70)
+
+adapter = CrewAISentinelAdapter(
+    run_id="run-001",
+    gate=gate,
+    permissions=permissions,
+    approvals=approvals,
+)
+adapter.setup()
+
+crew.kickoff()
+
+sentinel = Sentinel()
+adapter.flush_into(sentinel)
+violations = sentinel.detect_violations()
+```

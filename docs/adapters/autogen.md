@@ -456,3 +456,64 @@ if violations:
 **Class attribute**
 
 - `source_system = "autogen"` — appears on every translated `SentinelEvent`.
+
+---
+
+## Runtime security
+
+`AutoGenSentinelAdapter` supports the full agentcop runtime security stack via four optional
+constructor parameters. All default to `None` — existing code requires no changes.
+
+### Constructor params
+
+```python
+AutoGenSentinelAdapter(
+    run_id="run-001",
+    gate=None,        # ExecutionGate
+    permissions=None, # ToolPermissionLayer
+    sandbox=None,     # AgentSandbox
+    approvals=None,   # ApprovalBoundary
+    identity=None,    # AgentIdentity
+)
+```
+
+### What gets intercepted
+
+The gate fires inside `_from_function_call_started()` — the method that translates both
+AutoGen 0.2.x `function_call` messages and 0.4.x `ToolCallRequestEvent` messages — before
+the `SentinelEvent` is returned.  The sender name is used as `agent_id` for the permission
+layer.  If denied, `PermissionError` is raised and a security SentinelEvent is buffered.
+
+### Example
+
+```python
+from agentcop.adapters.autogen import AutoGenSentinelAdapter
+from agentcop.gate import ExecutionGate, ConditionalPolicy
+from agentcop.permissions import ToolPermissionLayer, WritePermission
+from agentcop.approvals import ApprovalBoundary
+
+gate = ExecutionGate()
+gate.register_policy("file_write", ConditionalPolicy(
+    allow_if=lambda args: args.get("path", "").startswith("/tmp/"),
+    deny_reason="writes outside /tmp are blocked",
+))
+
+permissions = ToolPermissionLayer()
+permissions.declare("AssistantAgent", [WritePermission(paths=["/tmp/*"])])
+
+approvals = ApprovalBoundary(requires_approval_above=80)
+
+adapter = AutoGenSentinelAdapter(
+    run_id="run-001",
+    gate=gate,
+    permissions=permissions,
+    approvals=approvals,
+)
+
+chat_result = user_proxy.initiate_chat(assistant, message="Write a report to /etc/cron.d/")
+
+sentinel = Sentinel()
+sentinel.ingest(adapter.iter_messages(chat_result.chat_history))
+adapter.flush_into(sentinel)
+violations = sentinel.detect_violations()
+```

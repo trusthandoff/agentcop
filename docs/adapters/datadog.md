@@ -413,3 +413,62 @@ Token counts are read from `llm.usage.*` metrics (standard) with fallback to
 **Class attribute**
 
 - `source_system = "datadog"` — appears on every translated `SentinelEvent`.
+
+---
+
+## Runtime security
+
+`DatadogSentinelAdapter` supports the full agentcop runtime security stack via four
+optional constructor parameters. All default to `None` — existing code requires no changes.
+
+### Constructor params
+
+```python
+DatadogSentinelAdapter(
+    run_id="run-001",
+    gate=None,        # ExecutionGate
+    permissions=None, # ToolPermissionLayer
+    sandbox=None,     # AgentSandbox
+    approvals=None,   # ApprovalBoundary
+    identity=None,    # AgentIdentity
+)
+```
+
+### What gets intercepted (observability adapter)
+
+Datadog is an observability adapter.  When gate/permissions are provided, the gate is
+checked inside `_intercepted_write()` for **LLM-type spans** (component tag in
+`_LLM_COMPONENTS`: openai, anthropic, langchain, etc.).  Gate decisions are logged as
+SentinelEvents; the `PermissionError` is caught so ddtrace export to the Datadog Agent
+is never disrupted.
+
+### Example
+
+```python
+import ddtrace
+from agentcop.adapters.datadog import DatadogSentinelAdapter
+from agentcop.gate import ExecutionGate, ConditionalPolicy
+from agentcop.permissions import ToolPermissionLayer, NetworkPermission
+
+gate = ExecutionGate()
+gate.register_policy("openai.request", ConditionalPolicy(
+    allow_if=lambda args: True,
+    deny_reason="openai calls require explicit permission",
+))
+
+permissions = ToolPermissionLayer()
+permissions.declare("default", [NetworkPermission(domains=["api.openai.com"])])
+
+adapter = DatadogSentinelAdapter(
+    run_id="run-001",
+    gate=gate,
+    permissions=permissions,
+)
+adapter.setup(ddtrace.tracer)
+
+# ... run your ddtrace-instrumented application ...
+
+sentinel = Sentinel()
+adapter.flush_into(sentinel)
+violations = sentinel.detect_violations()
+```

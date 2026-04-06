@@ -415,3 +415,65 @@ if violations:
 **Class attribute**
 
 - `source_system = "llamaindex"` — appears on every translated `SentinelEvent`.
+
+---
+
+## Runtime security
+
+`LlamaIndexSentinelAdapter` supports the full agentcop runtime security stack via four
+optional constructor parameters. All default to `None` — existing code requires no changes.
+
+### Constructor params
+
+```python
+LlamaIndexSentinelAdapter(
+    run_id="run-001",
+    gate=None,        # ExecutionGate
+    permissions=None, # ToolPermissionLayer
+    sandbox=None,     # AgentSandbox
+    approvals=None,   # ApprovalBoundary
+    identity=None,    # AgentIdentity
+)
+```
+
+### What gets intercepted
+
+The gate fires inside the `setup()` event handler for **`AgentToolCallEvent`** — before the
+translated event is buffered.  This is the LlamaIndex instrumentation event that fires
+when a ReAct or OpenAI agent decides to call a tool.  If denied, `PermissionError` is
+raised and a security SentinelEvent is buffered.
+
+### Example
+
+```python
+from llama_index.core import VectorStoreIndex
+from agentcop.adapters.llamaindex import LlamaIndexSentinelAdapter
+from agentcop.gate import ExecutionGate, ConditionalPolicy
+from agentcop.permissions import ToolPermissionLayer, NetworkPermission
+from agentcop.approvals import ApprovalBoundary
+
+gate = ExecutionGate()
+gate.register_policy("web_search", ConditionalPolicy(
+    allow_if=lambda args: len(args.get("query", "")) <= 512,
+    deny_reason="query too long — possible prompt injection",
+))
+
+permissions = ToolPermissionLayer()
+permissions.declare("default", [NetworkPermission(domains=["api.openai.com"])])
+
+approvals = ApprovalBoundary(requires_approval_above=75)
+
+adapter = LlamaIndexSentinelAdapter(
+    run_id="run-001",
+    gate=gate,
+    permissions=permissions,
+    approvals=approvals,
+)
+adapter.setup()
+
+response = query_engine.query("What is RAG?")
+
+sentinel = Sentinel()
+adapter.flush_into(sentinel)
+violations = sentinel.detect_violations()
+```

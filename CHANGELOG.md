@@ -11,6 +11,77 @@ agentcop uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.4.8] — 2026-04-06
+
+### Added
+
+- **Runtime security integration across all 10 framework adapters** — every adapter
+  (`LangGraph`, `CrewAI`, `AutoGen`, `LlamaIndex`, `Haystack`, `SemanticKernel`,
+  `Moltbook`, `Langfuse`, `LangSmith`, `Datadog`) now accepts four optional
+  keyword-only constructor params: `gate`, `permissions`, `sandbox`, `approvals`.
+  All default to `None` for full backward compatibility — existing code requires no
+  changes.
+
+- **`adapters/_runtime.py`** — shared runtime security helper module:
+  - `check_tool_call(adapter, tool_name, args, context, agent_id)` — enforces the full
+    security chain (ToolPermissionLayer → ExecutionGate → ApprovalBoundary) in order.
+    Fires SentinelEvents for every security decision and raises `PermissionError` on
+    denial.
+  - `fire_security_event(adapter, event_type, tool_name, args_hash, reason, severity)`
+    — buffers `gate_denied`, `permission_violation`, `approval_requested` SentinelEvents
+    onto any adapter that carries `_buffer` + `_lock`.
+
+- **Framework-specific interception points:**
+  - **LangGraph** — gate fires in `iter_events()` for every `task` (node start) event
+    before it is yielded.
+  - **CrewAI** — gate fires inside the `ToolUsageStartedEvent` event bus handler before
+    the translated event is buffered. Agent role is used as `agent_id`.
+  - **AutoGen** — gate fires in `_from_function_call_started()` for both 0.2.x and 0.4.x
+    message formats. Sender name is used as `agent_id`.
+  - **LlamaIndex** — gate fires in the `setup()` dispatcher handler for
+    `AgentToolCallEvent`.
+  - **Haystack** — gate fires in `_WrappingTracer.trace()` before each component's
+    execution context is entered. `AgentSandbox` wraps the component execution context
+    when provided.
+  - **Semantic Kernel** — gate fires in `_function_invocation_filter` after the
+    `function_invoking` event and before `await next(context)`.
+  - **Moltbook** — gate fires in `_from_skill_executed()` before skill translation.
+    Sandbox enforces network restrictions to `moltbook.com` only.
+  - **LangSmith / Langfuse / Datadog** (observability adapters) — gate decisions are
+    logged as SentinelEvents for tool/LLM spans. `PermissionError` is caught internally
+    to preserve export pipeline integrity.
+
+- **`identity` parameter** — all adapters accept an optional `AgentIdentity` instance.
+  When provided, `identity.trust_score` (0–100) is forwarded to the gate as
+  `context["trust_score"]`, enabling trust-adaptive policies:
+  - `trust_score < 50` → configure stricter policies (lower rate limits, smaller path
+    allowlists)
+  - `trust_score >= 80` → relaxed policies for known-good agents
+
+- **65 new runtime security tests** across all adapter test files:
+  - Gate denial raises `PermissionError` and buffers `gate_denied` event
+  - Permission violation raises `PermissionError` and buffers `permission_violation` event
+  - `ApprovalBoundary.submit()` and `wait_for_decision()` called for high-risk scores
+  - Sandbox stored on adapter and passed through correctly
+  - All existing adapter tests continue to pass with zero regressions
+
+- **Documentation updates:**
+  - `docs/adapters/*.md` — runtime security section added to all 10 adapter docs with
+    framework-specific examples and interception point descriptions
+  - `docs/guides/runtime-security.md` — new "Adapter integration" section covering the
+    universal pattern, interception point table, enforcement order, `AgentIdentity`
+    trust_score usage, and security event types
+  - `README.md` — adapter section updated with runtime security params and link to guide
+
+- **`pyproject.toml`** — `[runtime]` optional-dependencies group added.
+
+### Test count
+
+**1885 passed, 9 skipped** (9 skipped require optional framework packages not installed
+in CI).
+
+---
+
 ## [0.4.7] — 2026-04-06
 
 ### Added

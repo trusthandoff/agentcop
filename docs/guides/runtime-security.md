@@ -730,3 +730,168 @@ After trust score drops to 28:
 [AgentCop] stage=trust_guard  trust_score=28  threshold=30
 PermissionError: agent trust score 28 is below minimum threshold 30 — execution blocked
 ```
+
+---
+
+## Adapter integration
+
+As of v0.4.8, all framework adapters accept `gate`, `permissions`, `sandbox`, `approvals`,
+and `identity` as optional keyword-only constructor arguments.  All default to `None` for
+full backward compatibility.
+
+### Universal pattern
+
+Every adapter follows the same pattern regardless of framework:
+
+```python
+from agentcop.adapters.<framework> import <Framework>SentinelAdapter
+from agentcop.gate import ExecutionGate, ConditionalPolicy
+from agentcop.permissions import ToolPermissionLayer, NetworkPermission
+from agentcop.sandbox import AgentSandbox
+from agentcop.approvals import ApprovalBoundary
+
+gate = ExecutionGate()
+permissions = ToolPermissionLayer()
+sandbox = AgentSandbox(allowed_paths=["/tmp/*"], allowed_domains=["api.openai.com"])
+approvals = ApprovalBoundary(requires_approval_above=75)
+
+adapter = <Framework>SentinelAdapter(
+    gate=gate,
+    permissions=permissions,
+    sandbox=sandbox,
+    approvals=approvals,
+)
+```
+
+### Framework-specific interception points
+
+| Adapter | Interception point | Blocking? |
+|---|---|---|
+| **LangGraph** | `iter_events()` for `task` (node start) events | Yes — raises `PermissionError` |
+| **CrewAI** | `ToolUsageStartedEvent` bus handler | Yes — raises `PermissionError` |
+| **AutoGen** | `_from_function_call_started()` | Yes — raises `PermissionError` |
+| **LlamaIndex** | `AgentToolCallEvent` in `setup()` handler | Yes — raises `PermissionError` |
+| **Haystack** | `_WrappingTracer.trace()` before component start | Yes — raises `PermissionError` |
+| **Semantic Kernel** | `_function_invocation_filter` before `await next()` | Yes — raises `PermissionError` |
+| **Moltbook** | `_from_skill_executed()` | Yes — raises `PermissionError` |
+| **LangSmith** | `_intercepted_create()` for tool runs | Logged only |
+| **Langfuse** | `SpanProcessor.on_start()` for tool observations | Logged only |
+| **Datadog** | `_intercepted_write()` for LLM spans | Logged only |
+
+**Blocking adapters** raise `PermissionError` before execution and buffer a
+`gate_denied` or `permission_violation` SentinelEvent.
+
+**Logging adapters** (LangSmith, Langfuse, Datadog) are observability wrappers that fire
+after or alongside execution.  Gate decisions are logged as SentinelEvents but execution
+is not halted — use blocking adapters upstream for enforcement.
+
+### Enforcement order
+
+When all four parameters are provided, the check executes in this order:
+
+1. **`permissions`** — `ToolPermissionLayer.verify(agent_id, tool_name, args)`
+   → `PermissionError` + `permission_violation` event on denial
+2. **`gate`** — `ExecutionGate.check(tool_name, args, context)`
+   → `PermissionError` + `gate_denied` event on denial
+3. **`approvals`** — if `gate.risk_score > approvals.requires_approval_above`:
+   → `approval_requested` event → `wait_for_decision()` blocks thread
+   → `PermissionError` + `gate_denied` event if approval denied
+
+### AgentIdentity trust_score
+
+When `identity` is provided, its `trust_score` (0–100) is forwarded to the gate as
+`context["trust_score"]`.  This allows policy predicates to tighten enforcement for
+low-trust agents:
+
+```python
+from agentcop.identity import AgentIdentity, InMemoryIdentityStore
+
+store = InMemoryIdentityStore()
+identity = AgentIdentity.register("agent-1", store=store, metadata={})
+
+gate.register_policy("*", ConditionalPolicy(
+    allow_if=lambda args, ctx=None: (ctx or {}).get("trust_score", 100) >= 50,
+    deny_reason="agent trust score below threshold",
+))
+
+adapter = LangGraphSentinelAdapter(
+    gate=gate,
+    identity=identity,
+)
+```
+
+Trust score guidance:
+- `trust_score < 50` → restrict: lower rate limits, smaller path allowlists
+- `trust_score 50–79` → standard policies
+- `trust_score >= 80` → relaxed policies for known-good agents
+
+### Security event types
+
+All four event types are produced by `agentcop.adapters._runtime`:
+
+| `event_type` | `severity` | When |
+|---|---|---|
+| `permission_violation` | `CRITICAL` | `ToolPermissionLayer.verify()` returns `granted=False` |
+| `gate_denied` | `CRITICAL` | `ExecutionGate.check()` returns `allowed=False`, or approval denied |
+| `approval_requested` | `WARN` | `risk_score > requires_approval_above` |
+| `sandbox_escape` | `CRITICAL` | Reserved for future sandbox violation reporting |
+
+Security events are buffered on the adapter (`_buffer`) and flushed via
+`adapter.flush_into(sentinel)`.
+
+### LangGraph example with all four layers
+
+```python
+from agentcop import Sentinel
+from agentcop.adapters.langgraph import LangGraphSentinelAdapter
+from agentcop.gate import ExecutionGate, ConditionalPolicy, RateLimitPolicy
+from agentcop.permissions import ToolPermissionLayer, NetworkPermission, WritePermission
+from agentcop.sandbox import AgentSandbox
+from agentcop.approvals import ApprovalBoundary
+
+gate = ExecutionGate()
+gate.register_policy("web_search", RateLimitPolicy(max_calls=10, window_seconds=60))
+gate.register_policy("file_write", ConditionalPolicy(
+    allow_if=lambda args: args.get("path", "").startswith("/tmp/"),
+    deny_reason="writes outside /tmp are prohibited",
+))
+
+permissions = ToolPermissionLayer()
+permissions.declare("planner", [
+    NetworkPermission(domains=["api.openai.com", "serpapi.com"]),
+    WritePermission(paths=["/tmp/*"]),
+])
+
+sandbox = AgentSandbox(
+    allowed_paths=["/tmp/*", "/data/readonly/*"],
+    allowed_domains=["api.openai.com", "serpapi.com"],
+    max_execution_time=30.0,
+)
+
+approvals = ApprovalBoundary(
+    requires_approval_above=75,
+    channels=["cli"],
+    timeout=120,
+)
+
+adapter = LangGraphSentinelAdapter(
+    thread_id="run-abc",
+    gate=gate,
+    permissions=permissions,
+    sandbox=sandbox,
+    approvals=approvals,
+)
+
+sentinel = Sentinel()
+try:
+    sentinel.ingest(adapter.iter_events(
+        graph.stream(input, config, stream_mode="debug")
+    ))
+except PermissionError as e:
+    print(f"Blocked: {e}")
+finally:
+    adapter.flush_into(sentinel)
+
+violations = sentinel.detect_violations()
+sentinel.report()
+```

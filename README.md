@@ -44,6 +44,24 @@ Ten adapters are available — install only what you need:
 | [AutoGen](docs/adapters/autogen.md) | AutoGen agent messages | `pip install agentcop[autogen]` |
 | [Moltbook](docs/adapters/moltbook.md) | Moltbook social network agents | `pip install agentcop[moltbook]` |
 
+### Runtime security params (v0.4.8+)
+
+Every adapter accepts four optional runtime security parameters:
+
+```python
+adapter = LangGraphSentinelAdapter(      # same for all adapters
+    thread_id="run-abc",                 # framework-specific params unchanged
+    gate=ExecutionGate(),                # policy-based allow/deny per tool call
+    permissions=ToolPermissionLayer(),   # capability scoping per agent, deny by default
+    sandbox=AgentSandbox(...),           # path/domain/syscall enforcement
+    approvals=ApprovalBoundary(...),     # human-in-the-loop for high-risk actions
+    identity=AgentIdentity(...),         # trust_score auto-tunes gate strictness
+)
+```
+
+All parameters default to `None` — existing code requires no changes.  See the
+[runtime security guide](docs/guides/runtime-security.md) for full details.
+
 ---
 
 ## How it works

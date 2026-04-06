@@ -382,3 +382,86 @@ otel_exporter.export(
 **Class attribute**
 
 - `source_system = "langgraph"` — appears on every translated `SentinelEvent`.
+
+---
+
+## Runtime security
+
+`LangGraphSentinelAdapter` supports the full agentcop runtime security stack via four
+optional constructor parameters. All default to `None` — existing code requires no changes.
+
+### Constructor params
+
+```python
+LangGraphSentinelAdapter(
+    thread_id="run-abc",
+    gate=None,        # ExecutionGate     — policy-based allow/deny per node call
+    permissions=None, # ToolPermissionLayer — capability scope per agent
+    sandbox=None,     # AgentSandbox      — path/domain/syscall enforcement
+    approvals=None,   # ApprovalBoundary  — human-in-the-loop for high-risk nodes
+    identity=None,    # AgentIdentity     — trust_score auto-tunes gate strictness
+)
+```
+
+### What gets intercepted
+
+The gate fires inside `iter_events()` for every **`task`** (node start) event before it is
+yielded.  If the gate or permissions layer denies the call, a `PermissionError` is raised
+and a `gate_denied` or `permission_violation` `SentinelEvent` is buffered.  Security events
+can be drained with `adapter.drain()` or flushed via `adapter.flush_into(sentinel)`.
+
+### Example
+
+```python
+from agentcop.adapters.langgraph import LangGraphSentinelAdapter
+from agentcop.gate import ExecutionGate, ConditionalPolicy
+from agentcop.permissions import ToolPermissionLayer, NetworkPermission
+from agentcop.sandbox import AgentSandbox
+from agentcop.approvals import ApprovalBoundary
+
+gate = ExecutionGate()
+gate.register_policy("internet_search", ConditionalPolicy(
+    allow_if=lambda args: True,
+    deny_reason="internet_search is rate-limited to 10/min",
+))
+
+permissions = ToolPermissionLayer()
+permissions.declare("langgraph-agent", [
+    NetworkPermission(domains=["api.openai.com"]),
+])
+
+sandbox = AgentSandbox(allowed_paths=["/tmp/*"], allowed_domains=["api.openai.com"])
+approvals = ApprovalBoundary(requires_approval_above=75)
+
+adapter = LangGraphSentinelAdapter(
+    thread_id="run-abc",
+    gate=gate,
+    permissions=permissions,
+    sandbox=sandbox,
+    approvals=approvals,
+)
+
+sentinel = Sentinel()
+try:
+    sentinel.ingest(adapter.iter_events(
+        graph.stream(input, config, stream_mode="debug")
+    ))
+except PermissionError as e:
+    print(f"Node blocked: {e}")
+
+# Drain runtime-security events into sentinel
+adapter.flush_into(sentinel)
+violations = sentinel.detect_violations()
+```
+
+### AgentIdentity trust_score
+
+When `identity` is supplied, its `trust_score` (0–100) is forwarded to the gate as
+`context["trust_score"]`.  Use this in `ConditionalPolicy` predicates:
+
+```python
+gate.register_policy("*", ConditionalPolicy(
+    allow_if=lambda args, ctx=None: (ctx or {}).get("trust_score", 0) >= 50,
+    deny_reason="agent trust score too low",
+))
+```

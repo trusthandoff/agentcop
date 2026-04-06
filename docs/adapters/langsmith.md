@@ -427,3 +427,63 @@ if violations:
 **Class attribute**
 
 - `source_system = "langsmith"` — appears on every translated `SentinelEvent`.
+
+---
+
+## Runtime security
+
+`LangSmithSentinelAdapter` supports the full agentcop runtime security stack via four
+optional constructor parameters. All default to `None` — existing code requires no changes.
+
+### Constructor params
+
+```python
+LangSmithSentinelAdapter(
+    run_id="run-001",
+    gate=None,        # ExecutionGate
+    permissions=None, # ToolPermissionLayer
+    sandbox=None,     # AgentSandbox
+    approvals=None,   # ApprovalBoundary
+    identity=None,    # AgentIdentity
+)
+```
+
+### What gets intercepted (observability adapter)
+
+LangSmith is an observability adapter.  When gate/permissions are provided, the gate is
+checked inside `_intercepted_create()` for **tool-type runs** (`run_type = "tool"`).
+Gate decisions are logged as SentinelEvents; the `PermissionError` is caught so LangSmith
+export is never disrupted.
+
+### Example
+
+```python
+from langsmith import Client
+from agentcop.adapters.langsmith import LangSmithSentinelAdapter
+from agentcop.gate import ExecutionGate, ConditionalPolicy
+from agentcop.permissions import ToolPermissionLayer, ExecutePermission
+
+client = Client()
+
+gate = ExecutionGate()
+gate.register_policy("shell", ConditionalPolicy(
+    allow_if=lambda args: False,
+    deny_reason="shell execution is prohibited",
+))
+
+permissions = ToolPermissionLayer()
+permissions.declare("default", [ExecutePermission(commands=["ls", "cat"])])
+
+adapter = LangSmithSentinelAdapter(
+    run_id="run-001",
+    gate=gate,
+    permissions=permissions,
+)
+adapter.setup(client)
+
+# ... run your LangSmith-traced code ...
+
+sentinel = Sentinel()
+adapter.flush_into(sentinel)
+violations = sentinel.detect_violations()
+```

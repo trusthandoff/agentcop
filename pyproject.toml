@@ -81,6 +81,8 @@ runtime = [
 ]
 dev = [
     "pytest",
+    "cryptography>=41.0",
+    "ruff",
 ]
 
 [project.urls]

@@ -1,7 +1,7 @@
 [English](README.md) | [中文](README.zh.md)
 
 <p align="center">
-  <img src="https://agentcop.live/logo.png" alt="agentcop" width="120" />
+  <img src="https://raw.githubusercontent.com/trusthandoff/agentcop/main/assets/logo.svg" alt="agentcop" width="120" />
 </p>
 
 # agentcop — The Agent Cop

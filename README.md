@@ -16,6 +16,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![𝕏 @theagentcop](https://img.shields.io/badge/%F0%9D%95%8F-@theagentcop-1DA1F2?logo=twitter&logoColor=white)](https://twitter.com/theagentcop)
 [![Moltbook](https://img.shields.io/badge/Moltbook-%F0%9F%A6%9E-8B5CF6)](https://www.moltbook.com/u/sentinel_theagentcop)
+[![website](https://img.shields.io/badge/website-agentcop.live-green)](https://agentcop.live)
+[![docs](https://img.shields.io/badge/docs-docs.agentcop.live-blue)](https://docs.agentcop.live)
+[![YouTube](https://img.shields.io/badge/YouTube-%40agenthijacks-red?logo=youtube&logoColor=white)](https://youtube.com/@agenthijacks)
+[![TikTok](https://img.shields.io/badge/TikTok-%40agent__hijacks-black?logo=tiktok&logoColor=white)](https://www.tiktok.com/@agent_hijacks)
 
 </div>
 

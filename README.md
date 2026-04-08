@@ -37,6 +37,7 @@ OTel-aligned schema. Pluggable detectors. Adapter bridge to your stack. Zero req
 - **Moltbook adapter** — purpose-built monitoring for AI agents on the Moltbook social network: prompt-injection taint analysis on every received post, coordinated campaign detection, skill badge verification (LLM05), API key exfiltration detection (LLM06), and Ed25519 badge integration for agent profiles
 - OpenClaw integration — `/security` skill commands + `agentcop-monitor` hook for real-time LLM01/LLM02 detection in Telegram, WhatsApp, Discord, and more
 - **Runtime Security Layer** — four composable enforcement layers: `ExecutionGate` (policy-based tool execution with SQLite audit log), `ToolPermissionLayer` (declarative capability scoping, deny by default), `AgentSandbox` (runtime isolation with active syscall interception), `ApprovalBoundary` (human-in-the-loop for high-risk actions). `AgentCop.protect()` chains all four in one line.
+- **Reliability Layer** — five-metric reliability scoring (path entropy, tool variance, retry explosion, branch instability, token budget), SQLite-backed run history, predictive alerts via OLS regression, K-means++ cross-agent clustering, Prometheus export, and a combined badge format: `✅ SECURED 94/100 | 🟢 STABLE 87/100`
 - Optional OTel export via `agentcop[otel]`
 
 ```
@@ -620,6 +621,125 @@ badge = issuer.issue(
 ```
 
 See [docs/guides/runtime-security.md](docs/guides/runtime-security.md) for the complete guide including CLI reference, channel setup, and identity integration.
+
+---
+
+## Reliability Layer
+
+`agentcop` v0.4.10 ships a statistical reliability engine that turns raw run history into actionable reliability scores, predictive alerts, and cross-agent cluster analysis — all with zero ML dependencies.
+
+### What it measures
+
+| Metric | Description | Weight |
+|---|---|---|
+| Path entropy | Shannon entropy of execution paths — high entropy means unpredictable branching | 25% |
+| Tool variance | Coefficient of variation in tool usage across runs | 25% |
+| Retry explosion | Normalized score from retry counts and velocity | 30% |
+| Branch instability | Hamming distance between execution paths for the same input | 20% |
+| Token budget | Per-run token consumption vs baseline — emits spike alerts at 3× | informational |
+
+All four weighted metrics combine into a **reliability score (0–100)** and a tier:
+
+| Tier | Score | Badge |
+|---|---|---|
+| 🟢 STABLE | ≥ 80 | |
+| 🟡 VARIABLE | 60–79 | |
+| 🟠 UNSTABLE | 40–59 | |
+| 🔴 CRITICAL | < 40 | |
+
+### Quick example
+
+```python
+from agentcop import ReliabilityTracer, ReliabilityStore
+
+store = ReliabilityStore("agentcop.db")
+
+with ReliabilityTracer("my-agent", store=store) as tracer:
+    tracer.record_tool_call("bash", args={"cmd": "ls"}, result="file1.txt")
+    tracer.record_branch("chose_path_A")
+    tracer.record_tokens(input=100, output=250, model="gpt-4o")
+
+# After several runs, fetch the report
+from agentcop.reliability import ReliabilityEngine
+from agentcop.reliability.store import ReliabilityStore
+
+store = ReliabilityStore("agentcop.db")
+report = store.get_report("my-agent", window_hours=24)
+print(report.reliability_tier)   # STABLE | VARIABLE | UNSTABLE | CRITICAL
+print(report.reliability_score)  # 0-100
+```
+
+### Combined badge
+
+Security trust + reliability are displayed together:
+
+```
+✅ SECURED 94/100 | 🟢 STABLE 87/100
+```
+
+Generate it programmatically:
+
+```python
+from agentcop.reliability.badge_integration import combined_badge_text
+
+text = combined_badge_text(trust_score=94, reliability_score=87, reliability_tier="STABLE")
+# → "✅ SECURED 94/100 | 🟢 STABLE 87/100"
+```
+
+### CLI
+
+```bash
+# Per-agent report
+agentcop reliability report --agent my-agent --verbose
+
+# Side-by-side leaderboard
+agentcop reliability compare --agents agent-a agent-b agent-c
+
+# Live refresh (Ctrl-C to stop)
+agentcop reliability watch --agent my-agent --interval 10
+
+# Export as JSON or Prometheus metrics
+agentcop reliability export --agent my-agent --format prometheus
+agentcop reliability export --agents agent-a agent-b --format json -o report.json
+```
+
+### AgentIdentity integration
+
+`record_run()` updates trust score automatically based on tier:
+
+```python
+identity.record_run(run)          # STABLE +0 | VARIABLE −5 | UNSTABLE −15 | CRITICAL −30
+print(identity.reliability_tier)  # "STABLE"
+print(identity.reliability_score) # 87
+```
+
+### Predictive alerts
+
+Linear regression over the last N runs fires a `SentinelEvent` before metrics breach a threshold:
+
+```python
+from agentcop.reliability import ReliabilityPredictor
+
+predictor = ReliabilityPredictor()
+predictions = predictor.predict(runs, horizon_hours=2.0)
+for pred in predictions:
+    if pred.sentinel_event:
+        sentinel.push(pred.sentinel_event)
+    # → "WARNING: retry_count likely to exceed threshold (3.0) — ..."
+```
+
+### Prometheus export
+
+```python
+from agentcop.reliability import PrometheusExporter
+
+exporter = PrometheusExporter(store)
+print(exporter.export(["agent-a", "agent-b"]))
+# agentcop_reliability_score{agent_id="agent-a"} 87.0
+# agentcop_path_entropy{agent_id="agent-a"} 0.12
+# agentcop_tool_variance{agent_id="agent-a"} 0.08
+# ... (8 gauges per agent)
+```
 
 ---
 

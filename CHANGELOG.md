@@ -11,6 +11,134 @@ agentcop uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.4.10] — 2026-04-08
+
+### Added
+
+- **Reliability Layer** (`agentcop.reliability`) — statistical reliability scoring,
+  storage, instrumentation, and integrations. Zero ML dependencies — pure stdlib math.
+
+- **`agentcop.reliability.models`** — three Pydantic models:
+  - `AgentRun` — one completed agent execution: `run_id`, `agent_id`, `timestamp`,
+    `input_hash` / `output_hash`, `execution_path`, `tool_calls`, `duration_ms`,
+    `success`, `retry_count`, `input_tokens` / `output_tokens` / `total_tokens`,
+    `estimated_cost_usd`, `metadata`.
+  - `ToolCall` — one tool invocation: `tool_name`, `args_hash`, `result_hash`,
+    `duration_ms`, `success`, `retry_count`. Args and results are SHA-256 hashed
+    before storage — sensitive data is never persisted raw.
+  - `ReliabilityReport` — computed reliability snapshot: `reliability_score` (0–100),
+    `reliability_tier` (STABLE / VARIABLE / UNSTABLE / CRITICAL), plus five raw
+    metrics, drift state, trend direction, token stats, and `top_issues`.
+
+- **`agentcop.reliability.metrics`** — seven calculator classes + orchestrator:
+  - `PathEntropyCalculator` — Shannon entropy of execution paths, normalized by log2(n).
+  - `ToolVarianceCalculator` — coefficient of variation (std/mean) per tool, averaged.
+  - `RetryExplosionDetector` — returns `(score, events)`; warning threshold 3,
+    critical threshold 10, velocity inflation for burst patterns.
+  - `BranchInstabilityAnalyzer` — normalized Hamming distance between execution paths
+    grouped by `input_hash`.
+  - `TokenBudgetAnalyzer` — baseline mean per run; `spike_events` at 3× baseline.
+  - `ReliabilityScorer` — weighted sum: path×0.25 + tool×0.25 + retry×0.30 + branch×0.20.
+  - `DriftDetector` — splits runs at midpoint, fires `SentinelEvent` when ratio >
+    `significance_factor`.
+  - `ReliabilityEngine` — orchestrates all calculators, returns
+    `(ReliabilityReport, list[SentinelEvent])`.
+
+- **`agentcop.reliability.store`** — `ReliabilityStore`:
+  - SQLite backend with `rel_agent_runs`, `rel_tool_calls`, `rel_snapshots`,
+    `rel_schema_version` tables (prefixed to coexist with identity/badge tables).
+  - `record_run(agent_id, run)`, `get_runs(agent_id, hours, input_hash)`,
+    `get_report(agent_id, window_hours)`, `snapshot_report(report)`.
+  - `BEGIN EXCLUSIVE` transactions, `isolation_level=None` (autocommit), index on
+    `(agent_id, timestamp)`.
+
+- **`agentcop.reliability.instrumentation`** — two helpers:
+  - `ReliabilityTracer` — context manager: `record_tool_call()`, `record_branch()`,
+    `record_tokens()`, `set_output()`, `increment_retries()`. Builds and stores
+    `AgentRun` on `__exit__`.
+  - `wrap_for_reliability(adapter, agent_id, store)` — monkey-patches any adapter's
+    `to_sentinel_event` to track run lifecycle from the event stream.
+
+- **`agentcop.reliability.adapters`** — framework adapters:
+  - `LangChainReliabilityCallback` — LangChain callback for chain/tool/agent/LLM events.
+  - `CrewAIReliabilityHandler` — registers on `crewai_event_bus`.
+  - `AutoGenReliabilityWrapper` — wraps function map and tracks conversation context.
+  - `track_reliability(agent_id, store, input_arg)` — decorator for any callable.
+
+- **`agentcop.reliability.causality`** — `CausalAnalyzer`:
+  - Correlates reliability metrics with `time_of_day`, per-tool presence, and
+    `input_source` (first 8 chars of `input_hash`).
+  - Uses `statistics.correlation()` (Python 3.11+ stdlib). Returns `list[CausalFinding]`.
+
+- **`agentcop.reliability.prediction`** — `ReliabilityPredictor`:
+  - OLS linear regression over a sliding window of the last N runs.
+  - Projects `retry_count`, `total_tokens`, `path_entropy`, `tool_variance` forward
+    to `horizon_hours`.
+  - Fires predictive `SentinelEvent` (`severity="WARN"`) when projected value will
+    exceed threshold and R² ≥ `min_confidence`.
+  - Default thresholds: `retry_count` 3.0, `tool_variance` 0.6, `path_entropy` 0.7,
+    `total_tokens` dynamic (2× current mean).
+
+- **`agentcop.reliability.clustering`** — `AgentClusterAnalyzer`:
+  - K-means++ clustering on four-dimensional fingerprint
+    `[path_entropy, tool_variance, retry_score, branch_instability]`.
+  - `cluster_reports(reports)` from pre-computed reports;
+    `cluster_runs({agent_id: [runs]})` computed on the fly.
+  - Returns `list[AgentCluster]` with `tier`, `shared_pattern`, `recommended_action`.
+  - Uses `random.Random(seed=42)` for reproducible assignments — no numpy required.
+
+- **`agentcop.reliability.events`** — five `SentinelEvent` factory functions:
+  - `reliability_drift_detected` (WARN) — metric crossed the drift threshold.
+  - `retry_explosion` (ERROR) — retry count spiked to dangerous levels.
+  - `branch_instability_critical` (ERROR) — branch paths are highly unstable.
+  - `tool_variance_spike` (WARN) — tool usage variance exceeded threshold.
+  - `token_budget_spike` (WARN) — token consumption spiked above baseline.
+
+- **`agentcop.reliability.badge_integration`** — reliability tier → badge text:
+  - `reliability_emoji(tier)` — 🟢 / 🟡 / 🟠 / 🔴 for STABLE / VARIABLE / UNSTABLE / CRITICAL.
+  - `combined_badge_text(trust_score, reliability_score, reliability_tier)` →
+    `"✅ SECURED 94/100 | 🟢 STABLE 87/100"`.
+  - `reliability_shield_url` / `reliability_markdown_badge` — static Shields.io URLs.
+
+- **`agentcop.reliability.leaderboard`** — `ReliabilityLeaderboard`:
+  - `rank_reports(reports)` → `list[LeaderboardEntry]` sorted by score descending.
+  - Percentile calculation: `"more reliable than 73% of tracked agents"`.
+  - `summary(entries)` → plain-text leaderboard string for terminal display.
+
+- **`agentcop.reliability.prometheus`** — `PrometheusExporter`:
+  - `reports_to_prometheus(reports)` → Prometheus text exposition format (v0.0.4).
+  - Eight gauges per agent: `agentcop_reliability_score`, `agentcop_path_entropy`,
+    `agentcop_tool_variance`, `agentcop_retry_explosion_score`,
+    `agentcop_branch_instability`, `agentcop_tokens_per_run_avg`,
+    `agentcop_cost_per_run_avg`, `agentcop_window_runs_total`.
+
+- **`agentcop.reliability.cli`** — argparse CLI, four subcommands:
+  - `agentcop reliability report --agent <id> [--verbose] [--window-hours N]`
+  - `agentcop reliability compare --agents <id> [id ...] [--window-hours N]`
+  - `agentcop reliability watch --agent <id> [--interval S] [--window-hours N]`
+  - `agentcop reliability export --agent[s] <id> --format json|prometheus [-o FILE]`
+  - Entry point registered as `agentcop = "agentcop.reliability.cli:main"` in
+    `[project.scripts]`.
+
+- **`AgentIdentity.record_run(run)`** — integrates reliability into the identity system:
+  - Calls `ReliabilityEngine.compute_report()` for the given run.
+  - Populates `identity.reliability_score`, `identity.reliability_tier`,
+    `identity.last_reliability_check`.
+  - Adjusts `trust_score` by tier delta: STABLE +0, VARIABLE −5, UNSTABLE −15, CRITICAL −30.
+
+- **Public API exports from `agentcop`** — four convenience re-exports added to the
+  top-level package: `ReliabilityTracer`, `ReliabilityStore`, `ReliabilityReport`,
+  `wrap_for_reliability`.
+
+### Tests
+
+- **212 reliability tests** across four files:
+  `test_reliability.py` (64), `test_reliability_store.py` (21),
+  `test_reliability_advanced.py` (55), `test_reliability_final.py` (72).
+- **2106 total tests passing**, zero regressions.
+
+---
+
 ## [0.4.8] — 2026-04-06
 
 ### Added
@@ -369,7 +497,9 @@ in CI).
 - `DEFAULT_DETECTORS` list.
 - Optional OTel export via `agentcop[otel]`.
 
-[Unreleased]: https://github.com/trusthandoff/agentcop/compare/v0.4.7...HEAD
+[Unreleased]: https://github.com/trusthandoff/agentcop/compare/v0.4.10...HEAD
+[0.4.10]: https://github.com/trusthandoff/agentcop/compare/v0.4.8...v0.4.10
+[0.4.8]: https://github.com/trusthandoff/agentcop/compare/v0.4.7...v0.4.8
 [0.4.7]: https://github.com/trusthandoff/agentcop/compare/v0.4.5...v0.4.7
 [0.4.5]: https://github.com/trusthandoff/agentcop/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/trusthandoff/agentcop/compare/v0.2.0...v0.4.4

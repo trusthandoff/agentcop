@@ -44,10 +44,7 @@ def _estimate_cost(model: str | None, input_tokens: int, output_tokens: int) -> 
     model_lower = model.lower()
     for prefix, (in_cost, out_cost) in _MODEL_COSTS.items():
         if model_lower.startswith(prefix):
-            return (
-                input_tokens * in_cost / 1_000_000
-                + output_tokens * out_cost / 1_000_000
-            )
+            return input_tokens * in_cost / 1_000_000 + output_tokens * out_cost / 1_000_000
     return 0.0
 
 
@@ -192,12 +189,20 @@ class ReliabilityTracer:
 # Generic adapter wrapper
 # ---------------------------------------------------------------------------
 
-_RUN_START_TYPES = frozenset({
-    "node_start", "crew_kickoff_started", "agent_execution_started",
-})
-_RUN_END_TYPES = frozenset({
-    "node_end", "crew_kickoff_completed", "agent_execution_completed",
-})
+_RUN_START_TYPES = frozenset(
+    {
+        "node_start",
+        "crew_kickoff_started",
+        "agent_execution_started",
+    }
+)
+_RUN_END_TYPES = frozenset(
+    {
+        "node_end",
+        "crew_kickoff_completed",
+        "agent_execution_completed",
+    }
+)
 _TOOL_START_TYPES = frozenset({"tool_start", "tool_usage_started"})
 _TOOL_END_TYPES = frozenset({"tool_end", "tool_usage_finished", "function_call_result"})
 _ERROR_SUFFIX = "_error"

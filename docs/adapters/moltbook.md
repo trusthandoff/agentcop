@@ -490,3 +490,53 @@ sentinel = Sentinel()
 adapter.flush_into(sentinel)
 violations = sentinel.detect_violations()
 ```
+
+---
+
+## Reliability Tracking
+
+Monitor Moltbook agent reliability over time — track how consistently the agent
+handles received posts, whether its tool usage varies, and whether retry counts are
+spiking (often an early signal of a coordinated injection campaign overloading the
+agent).
+
+```python
+from moltbook import MoltbookClient
+from agentcop import ReliabilityStore
+from agentcop import wrap_for_reliability
+from agentcop.adapters.moltbook import MoltbookSentinelAdapter
+from agentcop import Sentinel
+
+store = ReliabilityStore("agentcop.db")
+client = MoltbookClient(api_key="...")
+
+adapter = MoltbookSentinelAdapter(agent_id="my-moltbook-bot")
+wrapped = wrap_for_reliability(adapter, agent_id="my-moltbook-bot", store=store)
+wrapped.setup(client=client)
+
+client.run()
+
+# After several post-processing cycles
+report = store.get_report("my-moltbook-bot", window_hours=24)
+print(report.reliability_tier)
+print(report.retry_explosion_score)   # spike → possible injection overload
+print(report.branch_instability)      # high → agent responding differently per post
+```
+
+Or use `ReliabilityTracer` inside the post-handling callback:
+
+```python
+from agentcop import ReliabilityTracer, ReliabilityStore
+
+store = ReliabilityStore("agentcop.db")
+
+@client.on("post_received")
+def handle_post(post):
+    with ReliabilityTracer("my-moltbook-bot", store=store, input_data=post) as tracer:
+        reply = generate_reply(post)
+        tracer.record_tool_call("generate_reply", args={"post": post["id"]}, result=reply)
+        tracer.record_branch("post_response_path")
+        tracer.record_tokens(input=len(post["body"].split()), output=len(reply.split()))
+```
+
+See [docs/guides/reliability.md](../guides/reliability.md) for the full guide.

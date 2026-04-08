@@ -487,3 +487,51 @@ sentinel = Sentinel()
 adapter.flush_into(sentinel)
 violations = sentinel.detect_violations()
 ```
+
+---
+
+## Reliability Tracking
+
+Combine agentcop's LangSmith run tracing with reliability scoring. Use
+`wrap_for_reliability()` on the LangSmith adapter, or record runs explicitly
+with `ReliabilityTracer` inside your traced callbacks.
+
+```python
+from agentcop import ReliabilityStore
+from agentcop import wrap_for_reliability
+from agentcop.adapters.langsmith import LangSmithSentinelAdapter
+from langsmith import Client
+
+store = ReliabilityStore("agentcop.db")
+client = Client()
+
+adapter = LangSmithSentinelAdapter(run_id="run-001")
+wrapped = wrap_for_reliability(adapter, agent_id="my-langsmith-agent", store=store)
+wrapped.setup(client)
+
+# ... run your LangSmith-traced code ...
+
+report = store.get_report("my-langsmith-agent", window_hours=24)
+print(report.reliability_tier)
+print(report.path_entropy)    # how varied are the execution paths?
+print(report.tool_variance)   # how consistently are tools being used?
+```
+
+Or use `ReliabilityTracer` directly inside a LangSmith-traced function:
+
+```python
+from agentcop import ReliabilityTracer, ReliabilityStore
+from langsmith import traceable
+
+store = ReliabilityStore("agentcop.db")
+
+@traceable
+def my_agent(input: str) -> str:
+    with ReliabilityTracer("my-agent", store=store, input_data=input) as tracer:
+        result = call_tool(input)
+        tracer.record_tool_call("call_tool", args={"input": input}, result=result)
+        tracer.record_tokens(input=100, output=200, model="gpt-4o")
+    return result
+```
+
+See [docs/guides/reliability.md](../guides/reliability.md) for the full guide.

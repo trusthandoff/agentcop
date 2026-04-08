@@ -10,10 +10,9 @@ No external dependencies — pure stdlib.
 
 import math
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from .models import AgentRun, ReliabilityReport
-
 
 # ---------------------------------------------------------------------------
 # K-means (stdlib-only)
@@ -21,7 +20,7 @@ from .models import AgentRun, ReliabilityReport
 
 
 def _euclidean(a: list[float], b: list[float]) -> float:
-    return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b)))
+    return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b, strict=False)))
 
 
 def _kmeans(
@@ -61,8 +60,7 @@ def _kmeans(
     assignments = [0] * n
     for _ in range(max_iter):
         new_assignments = [
-            min(range(k), key=lambda ci: _euclidean(p, centroids[ci]))
-            for p in points
+            min(range(k), key=lambda ci: _euclidean(p, centroids[ci])) for p in points
         ]
         if new_assignments == assignments:
             break
@@ -72,8 +70,7 @@ def _kmeans(
             cluster_pts = [points[i] for i, a in enumerate(assignments) if a == ci]
             if cluster_pts:
                 centroids[ci] = [
-                    sum(p[d] for p in cluster_pts) / len(cluster_pts)
-                    for d in range(dim)
+                    sum(p[d] for p in cluster_pts) / len(cluster_pts) for d in range(dim)
                 ]
     return assignments
 
@@ -123,10 +120,7 @@ def _recommend_action(tier: str) -> str:
     if tier == "STABLE":
         return "Continue monitoring; no immediate action required."
     if tier == "VARIABLE":
-        return (
-            "Review agent configuration and tool selection; "
-            "consider adding retry backoff."
-        )
+        return "Review agent configuration and tool selection; consider adding retry backoff."
     if tier == "UNSTABLE":
         return (
             "Investigate root cause of instability; "
@@ -134,8 +128,7 @@ def _recommend_action(tier: str) -> str:
         )
     # CRITICAL
     return (
-        "Immediate intervention required; "
-        "consider suspending agent and reviewing execution logs."
+        "Immediate intervention required; consider suspending agent and reviewing execution logs."
     )
 
 
@@ -150,10 +143,10 @@ class AgentCluster:
 
     cluster_id: int
     agent_ids: list[str]
-    centroid: list[float]      # [path_entropy, tool_variance, retry_score, branch_instability]
-    shared_pattern: str        # human-readable description of dominant characteristics
+    centroid: list[float]  # [path_entropy, tool_variance, retry_score, branch_instability]
+    shared_pattern: str  # human-readable description of dominant characteristics
     recommended_action: str
-    tier: str                  # STABLE | VARIABLE | UNSTABLE | CRITICAL
+    tier: str  # STABLE | VARIABLE | UNSTABLE | CRITICAL
 
 
 # ---------------------------------------------------------------------------
@@ -195,9 +188,7 @@ class AgentClusterAnalyzer:
         self._k = k
         self._seed = seed
 
-    def cluster_reports(
-        self, reports: list[ReliabilityReport]
-    ) -> list[AgentCluster]:
+    def cluster_reports(self, reports: list[ReliabilityReport]) -> list[AgentCluster]:
         """Cluster agents from pre-computed ReliabilityReports."""
         if not reports:
             return []
@@ -206,9 +197,7 @@ class AgentClusterAnalyzer:
             [_fingerprint(r) for r in reports],
         )
 
-    def cluster_runs(
-        self, agent_runs: dict[str, list[AgentRun]]
-    ) -> list[AgentCluster]:
+    def cluster_runs(self, agent_runs: dict[str, list[AgentRun]]) -> list[AgentCluster]:
         """Cluster agents from raw run lists, computing metrics on the fly."""
         from .metrics import (
             BranchInstabilityAnalyzer,
@@ -216,6 +205,7 @@ class AgentClusterAnalyzer:
             RetryExplosionDetector,
             ToolVarianceCalculator,
         )
+
         pe_calc = PathEntropyCalculator()
         tv_calc = ToolVarianceCalculator()
         retry_det = RetryExplosionDetector()
@@ -228,12 +218,14 @@ class AgentClusterAnalyzer:
                 continue
             retry_score, _ = retry_det.calculate(runs)
             agent_ids.append(agent_id)
-            fingerprints.append([
-                pe_calc.calculate(runs),
-                tv_calc.calculate(runs),
-                retry_score,
-                bi_calc.calculate(runs),
-            ])
+            fingerprints.append(
+                [
+                    pe_calc.calculate(runs),
+                    tv_calc.calculate(runs),
+                    retry_score,
+                    bi_calc.calculate(runs),
+                ]
+            )
         return self._build_clusters(agent_ids, fingerprints)
 
     # ── Internal ───────────────────────────────────────────────────────────
@@ -251,7 +243,7 @@ class AgentClusterAnalyzer:
 
         cluster_agents: dict[int, list[str]] = {}
         cluster_fps: dict[int, list[list[float]]] = {}
-        for i, (agent_id, fp) in enumerate(zip(agent_ids, fingerprints)):
+        for i, (agent_id, fp) in enumerate(zip(agent_ids, fingerprints, strict=False)):
             ci = assignments[i]
             cluster_agents.setdefault(ci, []).append(agent_id)
             cluster_fps.setdefault(ci, []).append(fp)

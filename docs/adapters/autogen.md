@@ -517,3 +517,43 @@ sentinel.ingest(adapter.iter_messages(chat_result.chat_history))
 adapter.flush_into(sentinel)
 violations = sentinel.detect_violations()
 ```
+
+---
+
+## Reliability Tracking
+
+Track message-chain stability, tool retry counts, and path consistency across
+AutoGen conversations. Use `AutoGenReliabilityWrapper` or instrument individual
+function maps with `ReliabilityTracer`.
+
+```python
+from agentcop import ReliabilityStore
+from agentcop.reliability.adapters import AutoGenReliabilityWrapper
+
+store = ReliabilityStore("agentcop.db")
+wrapper = AutoGenReliabilityWrapper(agent_id="autogen-agent", store=store)
+
+# Wrap the function map so tool calls are tracked automatically
+wrapped_fn_map = wrapper.wrap_function_map(assistant.function_map)
+assistant.function_map = wrapped_fn_map
+
+# Use track_conversation() as context manager for the full turn
+with wrapper.track_conversation():
+    user_proxy.initiate_chat(assistant, message="Summarise the quarterly report.")
+
+# After several conversations
+report = store.get_report("autogen-agent", window_hours=24)
+print(report.reliability_tier)   # STABLE | VARIABLE | UNSTABLE | CRITICAL
+```
+
+Or wrap the adapter directly:
+
+```python
+from agentcop import wrap_for_reliability
+from agentcop.adapters.autogen import AutoGenSentinelAdapter
+
+adapter = AutoGenSentinelAdapter(run_id="run-001")
+wrapped = wrap_for_reliability(adapter, agent_id="autogen-agent", store=store)
+```
+
+See [docs/guides/reliability.md](../guides/reliability.md) for the full guide.

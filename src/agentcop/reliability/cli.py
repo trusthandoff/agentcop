@@ -51,11 +51,13 @@ def _print_report(report: Any, *, verbose: bool = False) -> None:
 
     print(f"\n{'─' * 56}")
     print(f"  Agent: {report.agent_id}")
-    print(f"  Score: {report.reliability_score}/100  {emoji} {report.reliability_tier}  {arrow} {report.trend}")
+    print(
+        f"  Score: {report.reliability_score}/100  {emoji} {report.reliability_tier}  {arrow} {report.trend}"
+    )
     print(f"  Window: {report.window_runs} runs / {report.window_hours}h")
     print(f"  Computed: {report.computed_at.strftime('%Y-%m-%d %H:%M:%S UTC')}")
     if verbose:
-        print(f"\n  Metrics:")
+        print("\n  Metrics:")
         print(f"    path_entropy          {report.path_entropy:.4f}")
         print(f"    tool_variance         {report.tool_variance:.4f}")
         print(f"    retry_explosion       {report.retry_explosion_score:.4f}")
@@ -67,7 +69,7 @@ def _print_report(report: Any, *, verbose: bool = False) -> None:
         if report.drift_description:
             print(f"    drift_description     {report.drift_description}")
         if report.top_issues:
-            print(f"\n  Top issues:")
+            print("\n  Top issues:")
             for issue in report.top_issues:
                 print(f"    • {issue}")
     print(f"{'─' * 56}\n")
@@ -241,7 +243,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Analysis window in hours (default: 24).",
     )
     p_report.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Show detailed metric breakdown.",
     )

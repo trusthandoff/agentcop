@@ -10,9 +10,8 @@ No external ML dependencies — pure stdlib math.
 """
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
 
 from agentcop.event import SentinelEvent
 
@@ -38,7 +37,7 @@ def _ols(x: list[float], y: list[float]) -> tuple[float, float]:
     sx = sum(x)
     sy = sum(y)
     sxx = sum(xi * xi for xi in x)
-    sxy = sum(xi * yi for xi, yi in zip(x, y))
+    sxy = sum(xi * yi for xi, yi in zip(x, y, strict=False))
     denom = n * sxx - sx * sx
     if denom == 0.0:
         return 0.0, sy / n
@@ -47,9 +46,7 @@ def _ols(x: list[float], y: list[float]) -> tuple[float, float]:
     return slope, intercept
 
 
-def _r_squared(
-    x: list[float], y: list[float], slope: float, intercept: float
-) -> float:
+def _r_squared(x: list[float], y: list[float], slope: float, intercept: float) -> float:
     """Coefficient of determination R² — how well the line fits the data."""
     if len(y) < 2:
         return 0.0
@@ -57,7 +54,7 @@ def _r_squared(
     ss_tot = sum((yi - y_mean) ** 2 for yi in y)
     if ss_tot == 0.0:
         return 1.0  # constant series: perfect fit
-    ss_res = sum((yi - (slope * xi + intercept)) ** 2 for xi, yi in zip(x, y))
+    ss_res = sum((yi - (slope * xi + intercept)) ** 2 for xi, yi in zip(x, y, strict=False))
     return max(0.0, 1.0 - ss_res / ss_tot)
 
 
@@ -74,7 +71,7 @@ class Prediction:
     current_value: float
     predicted_value: float
     horizon_hours: float
-    confidence: float          # R², 0-1
+    confidence: float  # R², 0-1
     will_exceed_threshold: bool
     threshold: float
     slope_per_hour: float
@@ -158,9 +155,7 @@ class ReliabilityPredictor:
             ("total_tokens", lambda r: float(r.total_tokens)),
         ]:
             values = [values_fn(r) for r in window_runs]
-            predictions.extend(
-                self._predict_metric(metric, values, window_runs, horizon_hours)
-            )
+            predictions.extend(self._predict_metric(metric, values, window_runs, horizon_hours))
 
         predictions.extend(self._predict_path_entropy(window_runs, horizon_hours))
         predictions.extend(self._predict_tool_variance(window_runs, horizon_hours))
@@ -203,10 +198,7 @@ class ReliabilityPredictor:
             f"(now: {current_value:.1f}, slope: {slope:+.2f}/h, R²={r2:.2f})"
         )
         if will_exceed:
-            desc = (
-                f"WARNING: {metric} likely to exceed threshold "
-                f"({threshold:.1f}) — {desc}"
-            )
+            desc = f"WARNING: {metric} likely to exceed threshold ({threshold:.1f}) — {desc}"
 
         event: SentinelEvent | None = None
         if will_exceed and r2 >= self._min_confidence:
@@ -260,8 +252,7 @@ class ReliabilityPredictor:
             return []
 
         values: list[float] = [
-            calc.calculate(runs[i - win : i])
-            for i in range(win, len(runs) + 1)
+            calc.calculate(runs[i - win : i]) for i in range(win, len(runs) + 1)
         ]
         # The representative run for each window is the last run in that window
         synthetic_runs = runs[win - 1 :]
@@ -281,8 +272,7 @@ class ReliabilityPredictor:
             return []
 
         values: list[float] = [
-            calc.calculate(runs[i - win : i])
-            for i in range(win, len(runs) + 1)
+            calc.calculate(runs[i - win : i]) for i in range(win, len(runs) + 1)
         ]
         synthetic_runs = runs[win - 1 :]
         return self._predict_metric("tool_variance", values, synthetic_runs, horizon_hours)

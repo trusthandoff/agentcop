@@ -75,9 +75,7 @@ class ToolVarianceCalculator:
         n = len(runs)
         cvs: list[float] = []
         for tool in all_tools:
-            counts = [
-                sum(1 for tc in run.tool_calls if tc.tool_name == tool) for run in runs
-            ]
+            counts = [sum(1 for tc in run.tool_calls if tc.tool_name == tool) for run in runs]
             mean = sum(counts) / n
             if mean == 0.0:
                 continue
@@ -225,7 +223,7 @@ class BranchInstabilityAnalyzer:
         max_len = max(len(a), len(b), 1)
         a_pad = a + [""] * (max_len - len(a))
         b_pad = b + [""] * (max_len - len(b))
-        diffs = sum(1 for x, y in zip(a_pad, b_pad) if x != y)
+        diffs = sum(1 for x, y in zip(a_pad, b_pad, strict=False) if x != y)
         return diffs / max_len
 
 
@@ -281,9 +279,7 @@ class TokenBudgetAnalyzer:
 
         sorted_runs = sorted(runs, key=lambda r: r.timestamp)
         if len(sorted_runs) >= 2:
-            span_seconds = (
-                sorted_runs[-1].timestamp - sorted_runs[0].timestamp
-            ).total_seconds()
+            span_seconds = (sorted_runs[-1].timestamp - sorted_runs[0].timestamp).total_seconds()
             burn_rate = (sum(token_counts) / span_seconds * 60.0) if span_seconds > 0.0 else 0.0
         else:
             burn_rate = 0.0
@@ -408,15 +404,11 @@ class DriftDetector:
     Returns (drift_detected, description | None, list[SentinelEvent]).
     """
 
-    def __init__(
-        self, window_hours: int = 2, significance_factor: float = 2.0
-    ) -> None:
+    def __init__(self, window_hours: int = 2, significance_factor: float = 2.0) -> None:
         self.window_hours = window_hours
         self.significance_factor = significance_factor
 
-    def detect(
-        self, runs: list[AgentRun]
-    ) -> tuple[bool, str | None, list[SentinelEvent]]:
+    def detect(self, runs: list[AgentRun]) -> tuple[bool, str | None, list[SentinelEvent]]:
         if len(runs) < 4:
             return False, None, []
 
@@ -435,9 +427,7 @@ class DriftDetector:
             factor = recent_tv / prior_tv
             desc = f"tool_variance increased {factor:.1f}x in last {self.window_hours}h"
             descriptions.append(desc)
-            sentinel_events.append(
-                self._make_drift_event(latest_run, "tool_variance_drift", desc)
-            )
+            sentinel_events.append(self._make_drift_event(latest_run, "tool_variance_drift", desc))
 
         retry_det = RetryExplosionDetector()
         prior_retry, _ = retry_det.calculate(prior)
@@ -445,16 +435,12 @@ class DriftDetector:
         if prior_retry < 0.1 and recent_retry >= 0.3:
             desc = f"retry rate spiked to {recent_retry:.0%} in last {self.window_hours}h"
             descriptions.append(desc)
-            sentinel_events.append(
-                self._make_drift_event(latest_run, "retry_drift", desc)
-            )
+            sentinel_events.append(self._make_drift_event(latest_run, "retry_drift", desc))
         elif prior_retry > 0.0 and recent_retry > self.significance_factor * prior_retry:
             factor = recent_retry / prior_retry
             desc = f"retry_rate increased {factor:.1f}x in last {self.window_hours}h"
             descriptions.append(desc)
-            sentinel_events.append(
-                self._make_drift_event(latest_run, "retry_drift", desc)
-            )
+            sentinel_events.append(self._make_drift_event(latest_run, "retry_drift", desc))
 
         path_calc = PathEntropyCalculator()
         prior_pe = path_calc.calculate(prior)
@@ -462,25 +448,19 @@ class DriftDetector:
         if prior_pe < 0.1 and recent_pe >= 0.3:
             desc = f"execution path became chaotic in last {self.window_hours}h"
             descriptions.append(desc)
-            sentinel_events.append(
-                self._make_drift_event(latest_run, "path_entropy_drift", desc)
-            )
+            sentinel_events.append(self._make_drift_event(latest_run, "path_entropy_drift", desc))
         elif prior_pe > 0.0 and recent_pe > self.significance_factor * prior_pe:
             factor = recent_pe / prior_pe
             desc = f"path_entropy increased {factor:.1f}x in last {self.window_hours}h"
             descriptions.append(desc)
-            sentinel_events.append(
-                self._make_drift_event(latest_run, "path_entropy_drift", desc)
-            )
+            sentinel_events.append(self._make_drift_event(latest_run, "path_entropy_drift", desc))
 
         if not descriptions:
             return False, None, []
         return True, "; ".join(descriptions), sentinel_events
 
     @staticmethod
-    def _make_drift_event(
-        run: AgentRun, drift_type: str, description: str
-    ) -> SentinelEvent:
+    def _make_drift_event(run: AgentRun, drift_type: str, description: str) -> SentinelEvent:
         return SentinelEvent(
             event_id=f"reliability-drift-{uuid.uuid4()}",
             event_type="reliability_drift",
@@ -539,9 +519,7 @@ class ReliabilityEngine:
     ) -> None:
         self._path_calc = PathEntropyCalculator()
         self._tool_calc = ToolVarianceCalculator()
-        self._retry_det = RetryExplosionDetector(
-            retry_warning_threshold, retry_critical_threshold
-        )
+        self._retry_det = RetryExplosionDetector(retry_warning_threshold, retry_critical_threshold)
         self._branch_calc = BranchInstabilityAnalyzer()
         self._token_analyzer = TokenBudgetAnalyzer(token_spike_multiplier)
         self._drift_detector = DriftDetector(window_hours, drift_significance_factor)
@@ -641,17 +619,11 @@ class ReliabilityEngine:
     ) -> list[str]:
         issues: list[str] = []
         if path_entropy > 0.7:
-            issues.append(
-                f"High path entropy ({path_entropy:.2f}): execution paths vary widely"
-            )
+            issues.append(f"High path entropy ({path_entropy:.2f}): execution paths vary widely")
         if tool_variance > 0.7:
-            issues.append(
-                f"High tool variance ({tool_variance:.2f}): tool usage is inconsistent"
-            )
+            issues.append(f"High tool variance ({tool_variance:.2f}): tool usage is inconsistent")
         if retry_score > 0.5:
-            issues.append(
-                f"Retry explosion ({retry_score:.2f}): excessive retries detected"
-            )
+            issues.append(f"Retry explosion ({retry_score:.2f}): excessive retries detected")
         if branch_instability > 0.7:
             issues.append(
                 f"High branch instability ({branch_instability:.2f}): "

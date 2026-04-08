@@ -505,3 +505,52 @@ async def main():
 
 asyncio.run(main())
 ```
+
+---
+
+## Reliability Tracking
+
+Pair Semantic Kernel function invocation tracing with reliability scoring.
+Wrap the Semantic Kernel adapter with `wrap_for_reliability()`, or use
+`ReliabilityTracer` inside kernel functions to record tool calls and branches.
+
+```python
+from semantic_kernel import Kernel
+from agentcop import ReliabilityStore
+from agentcop import wrap_for_reliability
+from agentcop.adapters.semantic_kernel import SemanticKernelSentinelAdapter
+
+store = ReliabilityStore("agentcop.db")
+kernel = Kernel()
+
+adapter = SemanticKernelSentinelAdapter(run_id="run-001")
+wrapped = wrap_for_reliability(adapter, agent_id="my-sk-agent", store=store)
+wrapped.setup(kernel)
+
+# ... invoke kernel functions ...
+
+report = store.get_report("my-sk-agent", window_hours=24)
+print(report.reliability_tier)
+print(report.tool_variance)   # how consistently are SK functions being called?
+```
+
+Or use `ReliabilityTracer` inside a kernel function:
+
+```python
+from semantic_kernel.functions import kernel_function
+from agentcop import ReliabilityTracer, ReliabilityStore
+
+store = ReliabilityStore("agentcop.db")
+
+class MyPlugin:
+    @kernel_function(description="Search the web")
+    def search(self, query: str) -> str:
+        with ReliabilityTracer("my-sk-agent", store=store, input_data=query) as tracer:
+            result = web_search(query)
+            tracer.record_tool_call("web_search", args={"query": query}, result=result)
+            tracer.record_branch("search_path")
+            tracer.record_tokens(input=50, output=300, model="gpt-4o")
+        return result
+```
+
+See [docs/guides/reliability.md](../guides/reliability.md) for the full guide.

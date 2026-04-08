@@ -18,7 +18,6 @@ from typing import Any
 from .instrumentation import ReliabilityTracer
 from .models import AgentRun
 
-
 # ---------------------------------------------------------------------------
 # ReliabilityMixin
 # ---------------------------------------------------------------------------
@@ -49,9 +48,7 @@ class ReliabilityMixin:
         self._reliability_tracer._start_time = time.monotonic()
         return self._reliability_tracer
 
-    def _end_run(
-        self, output: Any = None, *, exc: BaseException | None = None
-    ) -> AgentRun | None:
+    def _end_run(self, output: Any = None, *, exc: BaseException | None = None) -> AgentRun | None:
         tracer: ReliabilityTracer | None = getattr(self, "_reliability_tracer", None)
         if tracer is None:
             return None
@@ -108,9 +105,7 @@ class LangChainReliabilityCallback(ReliabilityMixin):
 
     # LangChain callback interface -------------------------------------------
 
-    def on_chain_start(
-        self, serialized: dict, inputs: dict, **kwargs: Any
-    ) -> None:
+    def on_chain_start(self, serialized: dict, inputs: dict, **kwargs: Any) -> None:
         if self._reliability_tracer is None:
             self._start_run(self.agent_id, input_data=inputs, store=self._store)
 
@@ -124,9 +119,7 @@ class LangChainReliabilityCallback(ReliabilityMixin):
         if run:
             self.last_run = run
 
-    def on_tool_start(
-        self, serialized: dict, input_str: str, **kwargs: Any
-    ) -> None:
+    def on_tool_start(self, serialized: dict, input_str: str, **kwargs: Any) -> None:
         tracer = self._get_tracer()
         if tracer:
             tracer._metadata["_pending_tool"] = serialized.get("name", "unknown_tool")
@@ -298,9 +291,7 @@ class AutoGenReliabilityWrapper(ReliabilityMixin):
         self._reliability_tracer: ReliabilityTracer | None = None
         self.last_run: AgentRun | None = None
 
-    def wrap_function_map(
-        self, function_map: dict[str, Any]
-    ) -> dict[str, Any]:
+    def wrap_function_map(self, function_map: dict[str, Any]) -> dict[str, Any]:
         """Return a new function_map with each function wrapped for tracing."""
         return {name: self._tracked_fn(name, fn) for name, fn in function_map.items()}
 
@@ -323,9 +314,7 @@ class AutoGenReliabilityWrapper(ReliabilityMixin):
 
         return _wrapper
 
-    def track_conversation(
-        self, initial_message: Any = None
-    ) -> "AutoGenReliabilityWrapper":
+    def track_conversation(self, initial_message: Any = None) -> "AutoGenReliabilityWrapper":
         """Context manager that scopes a tracer to one conversation."""
         self._pending_input = initial_message
         return self
@@ -381,9 +370,7 @@ def track_reliability(
             else:
                 raw_input = args[0] if args else None
 
-            with ReliabilityTracer(
-                agent_id, input_data=raw_input, store=store
-            ) as tracer:
+            with ReliabilityTracer(agent_id, input_data=raw_input, store=store) as tracer:
                 result = fn(*args, **kwargs)
                 tracer.set_output(result)
             return result

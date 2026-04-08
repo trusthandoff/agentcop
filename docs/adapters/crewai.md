@@ -424,3 +424,46 @@ sentinel = Sentinel()
 adapter.flush_into(sentinel)
 violations = sentinel.detect_violations()
 ```
+
+---
+
+## Reliability Tracking
+
+Track retry explosions, tool variance, and branch instability across CrewAI crew
+runs. Use `CrewAIReliabilityHandler` (shipped in `agentcop.reliability.adapters`)
+or instrument individual agent tasks with `ReliabilityTracer`.
+
+```python
+from crewai import Crew, Agent, Task
+from agentcop import ReliabilityStore
+from agentcop.reliability.adapters import CrewAIReliabilityHandler
+
+store = ReliabilityStore("agentcop.db")
+handler = CrewAIReliabilityHandler(agent_id="research-crew", store=store)
+handler.setup()   # registers on crewai_event_bus — call before crew.kickoff()
+
+crew = Crew(agents=[...], tasks=[...])
+crew.kickoff()
+
+# Runs are recorded for each completed task
+report = store.get_report("research-crew", window_hours=24)
+print(f"{report.reliability_tier}: {report.reliability_score}/100")
+print(report.top_issues)
+```
+
+Or wrap the existing adapter:
+
+```python
+from agentcop import wrap_for_reliability
+from agentcop.adapters.crewai import CrewAISentinelAdapter
+
+store = ReliabilityStore("agentcop.db")
+adapter = CrewAISentinelAdapter(run_id="run-001")
+wrapped = wrap_for_reliability(adapter, agent_id="research-crew", store=store)
+adapter.setup()
+
+crew.kickoff()
+# reliability run recorded on task completion events
+```
+
+See [docs/guides/reliability.md](../guides/reliability.md) for the full guide.

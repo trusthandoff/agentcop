@@ -465,3 +465,52 @@ gate.register_policy("*", ConditionalPolicy(
     deny_reason="agent trust score too low",
 ))
 ```
+
+---
+
+## Reliability Tracking
+
+Track execution-path consistency, tool variance, and retry patterns across
+LangGraph runs using `wrap_for_reliability()` — no changes to your graph code required.
+
+```python
+from agentcop import ReliabilityStore
+from agentcop import wrap_for_reliability
+from agentcop.adapters.langgraph import LangGraphSentinelAdapter
+from agentcop import Sentinel
+
+store = ReliabilityStore("agentcop.db")
+adapter = LangGraphSentinelAdapter(thread_id="run-abc")
+
+# Wraps to_sentinel_event; infers run boundaries from task/task_result events
+wrapped = wrap_for_reliability(adapter, agent_id="my-graph", store=store)
+
+sentinel = Sentinel()
+sentinel.ingest(
+    wrapped.iter_events(graph.stream({"input": "..."}, config, stream_mode="debug"))
+)
+violations = sentinel.detect_violations()
+
+# After several runs, inspect reliability
+report = store.get_report("my-graph", window_hours=24)
+print(report.reliability_tier)   # STABLE | VARIABLE | UNSTABLE | CRITICAL
+print(report.reliability_score)  # 0-100
+```
+
+Or instrument individual tool calls inside a node using `ReliabilityTracer`:
+
+```python
+from agentcop import ReliabilityTracer, ReliabilityStore
+
+store = ReliabilityStore("agentcop.db")
+
+def my_node(state):
+    with ReliabilityTracer("my-graph", store=store) as tracer:
+        result = call_tool(state["input"])
+        tracer.record_tool_call("call_tool", args=state, result=result)
+        tracer.record_branch("my_node")
+        tracer.record_tokens(input=150, output=300, model="gpt-4o")
+    return {"output": result}
+```
+
+See [docs/guides/reliability.md](../guides/reliability.md) for the full guide.

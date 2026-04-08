@@ -8,7 +8,6 @@ import pytest
 from agentcop.reliability.models import AgentRun, ReliabilityReport, ToolCall
 from agentcop.reliability.store import ReliabilityStore
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -71,9 +70,7 @@ def store(tmp_path):
 
 class TestSchemaInit:
     def test_tables_exist(self, store):
-        cursor = store._conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        )
+        cursor = store._conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         tables = {row[0] for row in cursor.fetchall()}
         assert "rel_agent_runs" in tables
         assert "rel_tool_calls" in tables
@@ -199,9 +196,7 @@ class TestTimeWindowFiltering:
     def test_multiple_runs_time_ordered(self, store):
         t0 = datetime.now(UTC) - timedelta(hours=5)
         for i in range(3):
-            store.record_run(
-                "a", _run(timestamp=t0 + timedelta(hours=i))
-            )
+            store.record_run("a", _run(timestamp=t0 + timedelta(hours=i)))
         runs = store.get_runs("a", hours=10)
         assert len(runs) == 3
         assert runs[0].timestamp < runs[1].timestamp < runs[2].timestamp
@@ -264,18 +259,15 @@ class TestSnapshotReport:
     def test_multiple_snapshots(self, store):
         store.snapshot_report(self._make_report("x"))
         store.snapshot_report(self._make_report("x"))
-        cursor = store._conn.execute(
-            "SELECT COUNT(*) FROM rel_snapshots WHERE agent_id = 'x'"
-        )
+        cursor = store._conn.execute("SELECT COUNT(*) FROM rel_snapshots WHERE agent_id = 'x'")
         assert cursor.fetchone()[0] == 2
 
     def test_snapshot_json_roundtrip(self, store):
         import json
+
         report = self._make_report("z")
         store.snapshot_report(report)
-        cursor = store._conn.execute(
-            "SELECT report_json FROM rel_snapshots WHERE agent_id = 'z'"
-        )
+        cursor = store._conn.execute("SELECT report_json FROM rel_snapshots WHERE agent_id = 'z'")
         raw = cursor.fetchone()[0]
         data = json.loads(raw)
         assert data["agent_id"] == "z"

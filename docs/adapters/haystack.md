@@ -510,3 +510,52 @@ sentinel = Sentinel()
 adapter.flush_into(sentinel)
 violations = sentinel.detect_violations()
 ```
+
+---
+
+## Reliability Tracking
+
+Combine Haystack pipeline tracing with reliability scoring. Wrap the Haystack
+adapter to record component execution as reliability runs, then monitor path
+consistency and tool variance across pipeline invocations.
+
+```python
+from haystack import Pipeline
+from agentcop import ReliabilityStore
+from agentcop import wrap_for_reliability
+from agentcop.adapters.haystack import HaystackSentinelAdapter
+
+store = ReliabilityStore("agentcop.db")
+pipeline = Pipeline()
+
+adapter = HaystackSentinelAdapter(run_id="run-001")
+wrapped = wrap_for_reliability(adapter, agent_id="my-haystack-pipeline", store=store)
+wrapped.setup(pipeline)
+
+result = pipeline.run({"query": "What is the capital of France?"})
+
+report = store.get_report("my-haystack-pipeline", window_hours=24)
+print(report.reliability_tier)
+print(report.branch_instability)  # do the same queries trigger the same components?
+```
+
+Or use `ReliabilityTracer` inside a Haystack component:
+
+```python
+from haystack import component
+from agentcop import ReliabilityTracer, ReliabilityStore
+
+store = ReliabilityStore("agentcop.db")
+
+@component
+class ReliableRetriever:
+    @component.output_types(documents=list)
+    def run(self, query: str):
+        with ReliabilityTracer("haystack-retriever", store=store, input_data=query) as tracer:
+            docs = self.retriever.retrieve(query)
+            tracer.record_tool_call("retrieve", args={"query": query}, result=docs)
+            tracer.record_branch("retrieval_path")
+        return {"documents": docs}
+```
+
+See [docs/guides/reliability.md](../guides/reliability.md) for the full guide.

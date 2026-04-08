@@ -497,3 +497,50 @@ sentinel = Sentinel()
 adapter.flush_into(sentinel)
 violations = sentinel.detect_violations()
 ```
+
+---
+
+## Reliability Tracking
+
+Complement Langfuse observation tracing with per-run reliability scoring. Wrap the
+Langfuse adapter with `wrap_for_reliability()` so that every completed observation
+chain is recorded as a reliability run.
+
+```python
+from langfuse import Langfuse
+from agentcop import ReliabilityStore
+from agentcop import wrap_for_reliability
+from agentcop.adapters.langfuse import LangfuseSentinelAdapter
+
+store = ReliabilityStore("agentcop.db")
+langfuse = Langfuse()
+
+adapter = LangfuseSentinelAdapter(run_id="run-001")
+wrapped = wrap_for_reliability(adapter, agent_id="my-langfuse-agent", store=store)
+wrapped.setup(langfuse)
+
+# ... run your Langfuse-instrumented code ...
+
+report = store.get_report("my-langfuse-agent", window_hours=24)
+print(report.reliability_tier)
+print(report.tokens_per_run_avg)   # average token cost per observation chain
+print(report.token_spike_detected) # True if any run exceeded 3× baseline
+```
+
+Or use `ReliabilityTracer` alongside the Langfuse decorator:
+
+```python
+from agentcop import ReliabilityTracer, ReliabilityStore
+from langfuse.decorators import observe
+
+store = ReliabilityStore("agentcop.db")
+
+@observe()
+def my_generation(prompt: str) -> str:
+    with ReliabilityTracer("my-langfuse-agent", store=store, input_data=prompt) as tracer:
+        output = llm.generate(prompt)
+        tracer.record_tokens(input=len(prompt.split()), output=len(output.split()))
+    return output
+```
+
+See [docs/guides/reliability.md](../guides/reliability.md) for the full guide.

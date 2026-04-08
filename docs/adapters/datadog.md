@@ -472,3 +472,50 @@ sentinel = Sentinel()
 adapter.flush_into(sentinel)
 violations = sentinel.detect_violations()
 ```
+
+---
+
+## Reliability Tracking
+
+Pair Datadog APM span tracing with reliability scoring. Wrap the Datadog adapter
+with `wrap_for_reliability()` so each span batch maps to a reliability run, letting
+you correlate APM data with path entropy and retry patterns.
+
+```python
+import ddtrace
+from agentcop import ReliabilityStore
+from agentcop import wrap_for_reliability
+from agentcop.adapters.datadog import DatadogSentinelAdapter
+
+store = ReliabilityStore("agentcop.db")
+tracer = ddtrace.tracer
+
+adapter = DatadogSentinelAdapter(service="my-agent")
+wrapped = wrap_for_reliability(adapter, agent_id="my-dd-agent", store=store)
+wrapped.setup(tracer)
+
+# ... your ddtrace-instrumented agent code runs here ...
+
+report = store.get_report("my-dd-agent", window_hours=24)
+print(report.reliability_tier)    # STABLE | VARIABLE | UNSTABLE | CRITICAL
+print(report.retry_explosion_score)   # normalized 0-1 retry severity
+```
+
+Or use `ReliabilityTracer` inside a Datadog-traced function:
+
+```python
+import ddtrace
+from agentcop import ReliabilityTracer, ReliabilityStore
+
+store = ReliabilityStore("agentcop.db")
+
+@ddtrace.tracer.wrap()
+def my_agent_function(input: str) -> str:
+    with ReliabilityTracer("my-dd-agent", store=store, input_data=input) as tracer:
+        result = run_tools(input)
+        tracer.record_tool_call("run_tools", args={"input": input}, result=result)
+        tracer.record_branch("main_path")
+    return result
+```
+
+See [docs/guides/reliability.md](../guides/reliability.md) for the full guide.

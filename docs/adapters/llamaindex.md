@@ -477,3 +477,51 @@ sentinel = Sentinel()
 adapter.flush_into(sentinel)
 violations = sentinel.detect_violations()
 ```
+
+---
+
+## Reliability Tracking
+
+Track LlamaIndex query and tool execution patterns over time using reliability
+scoring. Wrap the LlamaIndex adapter with `wrap_for_reliability()` or add
+`ReliabilityTracer` to your query engine.
+
+```python
+from llama_index.core import VectorStoreIndex
+from agentcop import ReliabilityStore
+from agentcop import wrap_for_reliability
+from agentcop.adapters.llamaindex import LlamaIndexSentinelAdapter
+
+store = ReliabilityStore("agentcop.db")
+index = VectorStoreIndex.from_documents(docs)
+
+adapter = LlamaIndexSentinelAdapter(run_id="run-001")
+wrapped = wrap_for_reliability(adapter, agent_id="my-lli-agent", store=store)
+wrapped.setup()
+
+query_engine = index.as_query_engine()
+response = query_engine.query("What is RAG?")
+
+report = store.get_report("my-lli-agent", window_hours=24)
+print(report.reliability_tier)
+print(report.path_entropy)   # do queries take consistent retrieval paths?
+```
+
+Or instrument query execution directly:
+
+```python
+from agentcop import ReliabilityTracer, ReliabilityStore
+
+store = ReliabilityStore("agentcop.db")
+
+def reliable_query(query_engine, query: str) -> str:
+    with ReliabilityTracer("my-lli-agent", store=store, input_data=query) as tracer:
+        response = query_engine.query(query)
+        tracer.record_tool_call("query", args={"query": query}, result=str(response))
+        tracer.record_branch("retrieval_path")
+        # LlamaIndex doesn't expose token counts directly; set if available
+        tracer.record_tokens(input=100, output=200, model="gpt-4o")
+    return str(response)
+```
+
+See [docs/guides/reliability.md](../guides/reliability.md) for the full guide.

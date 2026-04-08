@@ -23,10 +23,10 @@ class CausalFinding:
     """A single correlation finding between a metric spike and a contributing factor."""
 
     metric: str
-    factor_type: str   # "time_of_day" | "tool" | "input_source"
+    factor_type: str  # "time_of_day" | "tool" | "input_source"
     factor_value: str  # "14:00 UTC" | "bash" | "abc12345"
     confidence: float  # |Pearson r|, 0-1
-    direction: str     # "positive" | "negative"
+    direction: str  # "positive" | "negative"
     description: str
 
 
@@ -112,9 +112,7 @@ class CausalAnalyzer:
             return []
         metric_fn = _METRIC_FN.get(metric)
         if metric_fn is None:
-            raise ValueError(
-                f"Unknown metric '{metric}'. Valid: {sorted(_METRIC_FN)}"
-            )
+            raise ValueError(f"Unknown metric '{metric}'. Valid: {sorted(_METRIC_FN)}")
         metric_values = [metric_fn(r) for r in runs]  # type: ignore[operator]
         findings: list[CausalFinding] = []
         findings.extend(self._correlate_time_of_day(runs, metric_values, metric))
@@ -145,8 +143,7 @@ class CausalAnalyzer:
                 confidence=abs(r),
                 direction=direction,
                 description=(
-                    f"{metric} spike at {peak_hour:02d}:00 UTC "
-                    f"(confidence: {abs(r):.0%})"
+                    f"{metric} spike at {peak_hour:02d}:00 UTC (confidence: {abs(r):.0%})"
                 ),
             )
         ]
@@ -160,10 +157,7 @@ class CausalAnalyzer:
         all_tools: set[str] = {tc.tool_name for run in runs for tc in run.tool_calls}
         findings: list[CausalFinding] = []
         for tool in sorted(all_tools):  # sorted for determinism
-            presence = [
-                float(any(tc.tool_name == tool for tc in run.tool_calls))
-                for run in runs
-            ]
+            presence = [float(any(tc.tool_name == tool for tc in run.tool_calls)) for run in runs]
             if sum(presence) < 2:
                 continue
             r = _pearson(presence, metric_values)
@@ -179,8 +173,7 @@ class CausalAnalyzer:
                     confidence=abs(r),
                     direction=direction,
                     description=(
-                        f"{metric} {verb} correlates with tool '{tool}' "
-                        f"(confidence: {abs(r):.0%})"
+                        f"{metric} {verb} correlates with tool '{tool}' (confidence: {abs(r):.0%})"
                     ),
                 )
             )
@@ -228,9 +221,7 @@ class CausalAnalyzer:
             return 0
         mean_val = statistics.mean(metric_values)
         above_mean_hours = [
-            runs[i].timestamp.hour
-            for i, v in enumerate(metric_values)
-            if v > mean_val
+            runs[i].timestamp.hour for i, v in enumerate(metric_values) if v > mean_val
         ]
         if not above_mean_hours:
             return 0

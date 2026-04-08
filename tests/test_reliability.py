@@ -1,7 +1,6 @@
 """Tests for agentcop.reliability — models, metrics, and the full engine."""
 
 import hashlib
-import math
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -15,11 +14,10 @@ from agentcop.reliability import (
     ReliabilityReport,
     ReliabilityScorer,
     RetryExplosionDetector,
+    TokenBudgetAnalyzer,
     ToolCall,
     ToolVarianceCalculator,
-    TokenBudgetAnalyzer,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -96,7 +94,7 @@ class TestModels:
 
     def test_reliability_report_tier_literal(self):
         # Pydantic enforces the Literal constraint
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             ReliabilityReport(
                 agent_id="x",
                 window_runs=1,
@@ -160,6 +158,7 @@ class TestPathEntropyCalculator:
 
     def test_output_bounded_zero_one(self):
         import random
+
         random.seed(42)
         paths = [["a", "b"], ["a", "c"], ["d"], ["a", "b", "c", "d"]]
         runs = [_run(execution_path=paths[i % len(paths)]) for i in range(20)]
@@ -208,9 +207,7 @@ class TestToolVarianceCalculator:
         assert result > 0.0
 
     def test_output_bounded_zero_one(self):
-        runs = [
-            _run(tool_calls=[_tool("a")] * i) for i in range(1, 10)
-        ]
+        runs = [_run(tool_calls=[_tool("a")] * i) for i in range(1, 10)]
         result = self.calc.calculate(runs)
         assert 0.0 <= result <= 1.0
 
@@ -359,6 +356,7 @@ class TestTokenBudgetAnalyzer:
 
     def test_spike_event_is_sentinel_event(self):
         from agentcop.event import SentinelEvent
+
         runs = [_run(total_tokens=100) for _ in range(4)]
         runs.append(_run(total_tokens=1000))
         result = self.analyzer.analyze(runs)
@@ -476,6 +474,7 @@ class TestDriftDetector:
 
     def test_drift_events_have_correct_type(self):
         from agentcop.event import SentinelEvent
+
         prior = [_run(retry_count=0) for _ in range(4)]
         recent = [_run(retry_count=8) for _ in range(4)]
         _, _, events = self.det.detect(prior + recent)
@@ -572,10 +571,7 @@ class TestReliabilityEngine:
 
     def test_top_issues_populated_for_bad_agent(self):
         paths = [["a"], ["b"], ["c"], ["d"], ["e"], ["f"], ["g"], ["h"]]
-        runs = [
-            _run(execution_path=paths[i % len(paths)], retry_count=5)
-            for i in range(8)
-        ]
+        runs = [_run(execution_path=paths[i % len(paths)], retry_count=5) for i in range(8)]
         report, _ = self.engine.compute_report("bad-agent", runs)
         assert len(report.top_issues) > 0
 
@@ -588,6 +584,7 @@ class TestReliabilityEngine:
 
     def test_reliability_score_is_int_in_range(self):
         import random
+
         random.seed(7)
         paths = [["a", "b"], ["c"], ["d", "e", "f"]]
         runs = [

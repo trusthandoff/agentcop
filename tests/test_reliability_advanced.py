@@ -9,6 +9,7 @@ Tests for the advanced reliability components:
   - AgentClusterAnalyzer
 """
 
+import contextlib
 import hashlib
 import time
 from datetime import UTC, datetime, timedelta
@@ -386,11 +387,8 @@ class TestAutoGenReliabilityWrapper:
         fn_map = {"unstable": fail_fn}
         wrapped = wrapper.wrap_function_map(fn_map)
 
-        with wrapper.track_conversation():
-            try:
-                wrapped["unstable"]()
-            except RuntimeError:
-                pass
+        with wrapper.track_conversation(), contextlib.suppress(RuntimeError):
+            wrapped["unstable"]()
         assert wrapper.last_run.tool_calls[0].success is False
 
     def test_context_exception_marks_failure(self):
@@ -516,7 +514,7 @@ class TestCausalAnalyzer:
 
         findings = CausalAnalyzer(min_confidence=0.3).analyze(runs, metric="retry_count")
         if len(findings) > 1:
-            for a, b in zip(findings, findings[1:]):
+            for a, b in zip(findings, findings[1:], strict=False):
                 assert a.confidence >= b.confidence
 
     def test_finding_description_format(self):
@@ -534,8 +532,9 @@ class TestCausalAnalyzer:
             assert 0.0 <= f.confidence <= 1.0
 
     def test_input_source_correlation(self):
-        from agentcop.reliability.causality import CausalAnalyzer
         import hashlib
+
+        from agentcop.reliability.causality import CausalAnalyzer
 
         source_a = hashlib.sha256(b"source_A").hexdigest()
         source_b = hashlib.sha256(b"source_B").hexdigest()
@@ -565,9 +564,7 @@ class TestReliabilityPredictor:
         from agentcop.reliability.prediction import ReliabilityPredictor
 
         # Constant retry_count=0 → slope=0, no threshold breach
-        runs = [
-            _run(retry_count=0, offset_hours=float(i)) for i in range(20)
-        ]
+        runs = [_run(retry_count=0, offset_hours=float(i)) for i in range(20)]
         predictions = ReliabilityPredictor(min_confidence=0.0).predict(runs)
         retry_pred = next((p for p in predictions if p.metric == "retry_count"), None)
         if retry_pred:
@@ -577,9 +574,7 @@ class TestReliabilityPredictor:
         from agentcop.reliability.prediction import ReliabilityPredictor
 
         # Retries linearly increasing 0 → 10 over 20 runs
-        runs = [
-            _run(retry_count=i, offset_hours=float(i)) for i in range(20)
-        ]
+        runs = [_run(retry_count=i, offset_hours=float(i)) for i in range(20)]
         predictions = ReliabilityPredictor(min_confidence=0.5).predict(runs, horizon_hours=2.0)
         retry_pred = next((p for p in predictions if p.metric == "retry_count"), None)
         assert retry_pred is not None
@@ -587,8 +582,8 @@ class TestReliabilityPredictor:
         assert retry_pred.sentinel_event is not None
 
     def test_sentinel_event_type(self):
-        from agentcop.reliability.prediction import ReliabilityPredictor
         from agentcop.event import SentinelEvent
+        from agentcop.reliability.prediction import ReliabilityPredictor
 
         runs = [_run(retry_count=i, offset_hours=float(i)) for i in range(20)]
         predictions = ReliabilityPredictor(min_confidence=0.5).predict(runs)
@@ -619,10 +614,12 @@ class TestReliabilityPredictor:
     def test_predictions_sorted_by_confidence(self):
         from agentcop.reliability.prediction import ReliabilityPredictor
 
-        runs = [_run(retry_count=i, total_tokens=i * 100, offset_hours=float(i)) for i in range(20)]
+        runs = [
+            _run(retry_count=i, total_tokens=i * 100, offset_hours=float(i)) for i in range(20)
+        ]
         predictions = ReliabilityPredictor(min_confidence=0.0).predict(runs)
         if len(predictions) > 1:
-            for a, b in zip(predictions, predictions[1:]):
+            for a, b in zip(predictions, predictions[1:], strict=False):
                 assert a.confidence >= b.confidence
 
 
@@ -676,10 +673,12 @@ class TestAgentClusterAnalyzer:
             )
             for i in range(8)
         ]
-        clusters = AgentClusterAnalyzer(k=2).cluster_runs({
-            "stable": stable_runs,
-            "chaotic": chaotic_runs,
-        })
+        clusters = AgentClusterAnalyzer(k=2).cluster_runs(
+            {
+                "stable": stable_runs,
+                "chaotic": chaotic_runs,
+            }
+        )
         assert len(clusters) == 2
         all_agents = {a for c in clusters for a in c.agent_ids}
         assert all_agents == {"stable", "chaotic"}
@@ -709,9 +708,9 @@ class TestAgentClusterAnalyzer:
         from agentcop.reliability.clustering import AgentClusterAnalyzer
 
         runs = [_run() for _ in range(5)]
-        clusters = AgentClusterAnalyzer(k=1).cluster_runs({
-            "zeta": runs, "alpha": runs, "mango": runs
-        })
+        clusters = AgentClusterAnalyzer(k=1).cluster_runs(
+            {"zeta": runs, "alpha": runs, "mango": runs}
+        )
         for cluster in clusters:
             assert cluster.agent_ids == sorted(cluster.agent_ids)
 
@@ -729,8 +728,7 @@ class TestAgentClusterAnalyzer:
 
         paths = [["a", "b"], ["c", "d"], ["e"]]
         runs = {
-            f"agent-{i}": [_run(execution_path=paths[i % 3]) for _ in range(5)]
-            for i in range(6)
+            f"agent-{i}": [_run(execution_path=paths[i % 3]) for _ in range(5)] for i in range(6)
         }
         a = AgentClusterAnalyzer(k=2).cluster_runs(runs)
         b = AgentClusterAnalyzer(k=2).cluster_runs(runs)

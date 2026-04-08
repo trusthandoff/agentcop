@@ -3,13 +3,11 @@ events, badge_integration, leaderboard, prometheus, cli, and identity.record_run
 """
 
 import hashlib
-import uuid
 from datetime import UTC, datetime
 
 import pytest
 
 from agentcop.reliability.models import AgentRun, ReliabilityReport, ToolCall
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -255,9 +253,7 @@ class TestCombinedBadgeText:
     def test_secured_stable(self):
         from agentcop.reliability.badge_integration import combined_badge_text
 
-        text = combined_badge_text(
-            trust_score=94, reliability_score=87, reliability_tier="STABLE"
-        )
+        text = combined_badge_text(trust_score=94, reliability_score=87, reliability_tier="STABLE")
         assert text == "✅ SECURED 94/100 | 🟢 STABLE 87/100"
 
     def test_monitored_variable(self):
@@ -628,8 +624,9 @@ class TestIdentityRecordRun:
             assert identity.trust_score == pytest.approx(before)
 
     def test_critical_run_reduces_trust(self):
+        from unittest.mock import MagicMock, patch
+
         from agentcop.identity import AgentIdentity
-        from unittest.mock import patch, MagicMock
 
         identity = AgentIdentity.register("test-agent", trust_score=70.0)
         run = _run("test-agent")
@@ -648,8 +645,9 @@ class TestIdentityRecordRun:
         assert identity.trust_score == pytest.approx(40.0)  # 70 - 30
 
     def test_unstable_run_reduces_trust_15(self):
+        from unittest.mock import MagicMock, patch
+
         from agentcop.identity import AgentIdentity
-        from unittest.mock import patch, MagicMock
 
         identity = AgentIdentity.register("test-agent", trust_score=60.0)
         run = _run("test-agent")
@@ -668,8 +666,9 @@ class TestIdentityRecordRun:
         assert identity.trust_score == pytest.approx(45.0)  # 60 - 15
 
     def test_variable_run_reduces_trust_5(self):
+        from unittest.mock import MagicMock, patch
+
         from agentcop.identity import AgentIdentity
-        from unittest.mock import patch, MagicMock
 
         identity = AgentIdentity.register("test-agent", trust_score=80.0)
         run = _run("test-agent")
@@ -688,8 +687,9 @@ class TestIdentityRecordRun:
         assert identity.trust_score == pytest.approx(75.0)  # 80 - 5
 
     def test_trust_score_clamped_at_zero(self):
+        from unittest.mock import MagicMock, patch
+
         from agentcop.identity import AgentIdentity
-        from unittest.mock import patch, MagicMock
 
         identity = AgentIdentity.register("test-agent", trust_score=10.0)
         run = _run("test-agent")
@@ -744,16 +744,17 @@ class TestPublicAPIExports:
 
     def test_reliability_submodule_exports(self):
         from agentcop.reliability import (
-            ReliabilityLeaderboard,
             PrometheusExporter,
+            ReliabilityLeaderboard,
+            branch_instability_critical,
             combined_badge_text,
             reliability_drift_detected,
-            retry_explosion,
-            branch_instability_critical,
-            tool_variance_spike,
-            token_budget_spike,
             reports_to_prometheus,
+            retry_explosion,
+            token_budget_spike,
+            tool_variance_spike,
         )
+
         assert ReliabilityLeaderboard is not None
         assert PrometheusExporter is not None
         assert combined_badge_text is not None

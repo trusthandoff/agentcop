@@ -111,8 +111,7 @@ class ReliabilityStore:
                     "ON rel_agent_runs(agent_id, timestamp)"
                 )
                 self._conn.execute(
-                    "CREATE INDEX IF NOT EXISTS rel_tool_calls_run "
-                    "ON rel_tool_calls(run_id)"
+                    "CREATE INDEX IF NOT EXISTS rel_tool_calls_run ON rel_tool_calls(run_id)"
                 )
                 cursor = self._conn.execute("SELECT version FROM rel_schema_version")
                 row = cursor.fetchone()
@@ -168,9 +167,7 @@ class ReliabilityStore:
                     ),
                 )
                 # Delete and re-insert tool calls for idempotency
-                self._conn.execute(
-                    "DELETE FROM rel_tool_calls WHERE run_id = ?", (run.run_id,)
-                )
+                self._conn.execute("DELETE FROM rel_tool_calls WHERE run_id = ?", (run.run_id,))
                 for tc in run.tool_calls:
                     self._conn.execute(
                         """
@@ -263,9 +260,20 @@ class ReliabilityStore:
             runs: list[AgentRun] = []
             for row in rows:
                 (
-                    run_id, _agent_id, ts, ih, exec_path_json,
-                    dur_ms, success, retry, out_hash,
-                    in_tok, out_tok, tot_tok, cost, meta_json,
+                    run_id,
+                    _agent_id,
+                    ts,
+                    ih,
+                    exec_path_json,
+                    dur_ms,
+                    success,
+                    retry,
+                    out_hash,
+                    in_tok,
+                    out_tok,
+                    tot_tok,
+                    cost,
+                    meta_json,
                 ) = row
 
                 tc_cursor = self._conn.execute(
@@ -310,9 +318,7 @@ class ReliabilityStore:
                 )
         return runs
 
-    def get_report(
-        self, agent_id: str, window_hours: int = 24
-    ) -> ReliabilityReport:
+    def get_report(self, agent_id: str, window_hours: int = 24) -> ReliabilityReport:
         """Compute and return a fresh ReliabilityReport for the given window."""
         runs = self.get_runs(agent_id, hours=window_hours)
         engine = ReliabilityEngine(window_hours=window_hours)

@@ -251,6 +251,14 @@ class AgentIdentity:
             sentinel.push(event)
     """
 
+    # Trust score adjustments from reliability tier (applied in record_run)
+    _RELIABILITY_TRUST_DELTA: dict[str, float] = {
+        "STABLE": 0.0,
+        "VARIABLE": -5.0,
+        "UNSTABLE": -15.0,
+        "CRITICAL": -30.0,
+    }
+
     def __init__(
         self,
         agent_id: str,
@@ -272,6 +280,11 @@ class AgentIdentity:
         self.status: Literal["active", "suspended", "flagged"] = status
         self.baseline = baseline
         self.drift_config: DriftConfig = drift_config or DriftConfig()
+
+        # Reliability integration fields
+        self.reliability_score: int | None = None
+        self.reliability_tier: str | None = None
+        self.last_reliability_check: datetime | None = None
 
         self._lock = threading.Lock()
         self._store = store or InMemoryIdentityStore()
@@ -800,6 +813,40 @@ class AgentIdentity:
             scan_count=scan_count,
             store=target_store,
         )
+
+    # ── Reliability integration ───────────────────────────────────────────
+
+    def record_run(self, run: Any) -> None:
+        """Update reliability state and trust score from a completed agent run.
+
+        After calling this method:
+
+        - :attr:`reliability_score` is refreshed from the run's computed report.
+        - :attr:`reliability_tier` is set to ``STABLE``, ``VARIABLE``,
+          ``UNSTABLE``, or ``CRITICAL``.
+        - :attr:`last_reliability_check` is updated to the current UTC time.
+        - :attr:`trust_score` is adjusted by the tier delta:
+          STABLE +0, VARIABLE −5, UNSTABLE −15, CRITICAL −30.
+
+        Requires ``agentcop.reliability`` to be installed (it is a peer module
+        within the same package, so no extra install is needed).
+
+        Args:
+            run: An :class:`~agentcop.reliability.models.AgentRun` instance.
+        """
+        from .reliability.metrics import ReliabilityEngine
+
+        engine = ReliabilityEngine()
+        report, _ = engine.compute_report(self.agent_id, [run])
+
+        delta = self._RELIABILITY_TRUST_DELTA.get(report.reliability_tier, 0.0)
+
+        with self._lock:
+            self.reliability_score = report.reliability_score
+            self.reliability_tier = report.reliability_tier
+            self.last_reliability_check = datetime.now(UTC)
+            if delta != 0.0:
+                self._adjust_trust(delta)
 
     def __repr__(self) -> str:
         return (

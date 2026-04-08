@@ -85,6 +85,9 @@ dev = [
     "ruff",
 ]
 
+[project.scripts]
+agentcop = "agentcop.reliability.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/trusthandoff/agentcop"
 Repository = "https://github.com/trusthandoff/agentcop"

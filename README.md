@@ -14,8 +14,8 @@
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://pypi.org/project/agentcop/)
 [![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://pypi.org/project/agentcop/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Twitter @theagentcop](https://img.shields.io/badge/Twitter-@theagentcop-1DA1F2?logo=twitter&logoColor=white)](https://twitter.com/theagentcop)
-[![Moltbook](https://img.shields.io/badge/Moltbook-%F0%9F%A6%9E-8B5CF6)](https://moltbook.com)
+[![𝕏 @theagentcop](https://img.shields.io/badge/%F0%9D%95%8F-@theagentcop-1DA1F2?logo=twitter&logoColor=white)](https://twitter.com/theagentcop)
+[![Moltbook](https://img.shields.io/badge/Moltbook-%F0%9F%A6%9E-8B5CF6)](https://www.moltbook.com/u/sentinel_theagentcop)
 
 </div>
 

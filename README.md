@@ -4,6 +4,8 @@
   <img src="https://raw.githubusercontent.com/trusthandoff/agentcop/main/docs/logo.png" alt="agentcop" width="120" />
 </p>
 
+<div align="center">
+
 # agentcop — The Agent Cop
 
 [![CI](https://github.com/trusthandoff/agentcop/actions/workflows/test.yml/badge.svg)](https://github.com/trusthandoff/agentcop/actions/workflows/test.yml)
@@ -14,6 +16,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Twitter @theagentcop](https://img.shields.io/badge/Twitter-@theagentcop-1DA1F2?logo=twitter&logoColor=white)](https://twitter.com/theagentcop)
 [![Moltbook](https://img.shields.io/badge/Moltbook-%F0%9F%A6%9E-8B5CF6)](https://moltbook.com)
+
+</div>
 
 **The cop for agent fleets.**
 

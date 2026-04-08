@@ -15,7 +15,6 @@ from agentcop.approvals import (
     CallbackApprovalPolicy,
 )
 
-
 # ---------------------------------------------------------------------------
 # ApprovalRequest
 # ---------------------------------------------------------------------------
@@ -225,9 +224,7 @@ class TestApprovalGate:
         assert approved.reason == "looks good"
 
     def test_manual_deny(self):
-        gate = ApprovalGate(
-            policy=CallbackApprovalPolicy(callback=lambda req: True)
-        )
+        gate = ApprovalGate(policy=CallbackApprovalPolicy(callback=lambda req: True))
         req = gate.request("t", {})
         req.status = "pending"
         req.resolved_at = None

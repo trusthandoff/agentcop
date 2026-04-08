@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import threading
 import time
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentcop.approvals import ApprovalBoundary, ApprovalRequest
-
+from agentcop.approvals import ApprovalBoundary
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -315,9 +314,7 @@ class TestAuditTrail:
 
 class TestChannelDispatch:
     def test_cli_channel_prints_to_stderr(self, capsys):
-        b = ApprovalBoundary(
-            requires_approval_above=0, channels=["cli"], timeout=300
-        )
+        b = ApprovalBoundary(requires_approval_above=0, channels=["cli"], timeout=300)
         req = b.submit("dangerous_tool", {}, risk_score=50)
         captured = capsys.readouterr()
         assert "dangerous_tool" in captured.err
@@ -337,7 +334,8 @@ class TestChannelDispatch:
             req = b.submit("delete_file", {"path": "/data/x"}, risk_score=50)
         mock_urlopen.assert_called_once()
         request_obj = mock_urlopen.call_args[0][0]
-        import json, urllib.request as ur
+        import json
+
         assert request_obj.full_url == "https://approval.example.com/notify"
         assert request_obj.get_header("Content-type") == "application/json"
         payload = json.loads(request_obj.data)
@@ -371,6 +369,7 @@ class TestChannelDispatch:
             mock_urlopen.return_value.__exit__ = MagicMock(return_value=False)
             b.submit("my_tool", {}, risk_score=99)
         import json
+
         request_obj = mock_urlopen.call_args[0][0]
         payload = json.loads(request_obj.data)
         assert "text" in payload

@@ -60,13 +60,14 @@ or testing without a live client::
 
 from __future__ import annotations
 
+import contextlib
 import json
 import threading
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from agentcop.adapters._runtime import check_tool_call, fire_security_event
+from agentcop.adapters._runtime import check_tool_call
 from agentcop.event import SentinelEvent
 
 
@@ -188,18 +189,14 @@ class LangSmithSentinelAdapter:
             inputs = (args[1] if len(args) > 1 else None) or kwargs.get("inputs") or {}
             run_type = (args[2] if len(args) > 2 else None) or kwargs.get("run_type", "chain")
             # Log gate decision for tool runs.
-            if run_type in _TOOL_TYPES and (
-                adapter_self._gate or adapter_self._permissions
-            ):
-                try:
+            if run_type in _TOOL_TYPES and (adapter_self._gate or adapter_self._permissions):
+                with contextlib.suppress(PermissionError):
                     check_tool_call(
                         adapter_self,
                         str(name),
                         dict(inputs) if isinstance(inputs, dict) else {},
                         context={"run_type": run_type},
-                    )
-                except PermissionError:
-                    pass  # already buffered as gate_denied / permission_violation
+                    )  # already buffered as gate_denied / permission_violation on suppress
 
             run_id = str(kwargs.get("id") or "")
             trace_id = str(kwargs.get("trace_id") or run_id)

@@ -8,7 +8,6 @@ import pytest
 
 from agentcop.sandbox import ExecutionSandbox, SandboxPolicy, SandboxViolation
 
-
 # ---------------------------------------------------------------------------
 # SandboxPolicy
 # ---------------------------------------------------------------------------

@@ -55,12 +55,13 @@ or testing without a live tracer::
 
 from __future__ import annotations
 
+import contextlib
 import threading
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from agentcop.adapters._runtime import check_tool_call, fire_security_event
+from agentcop.adapters._runtime import check_tool_call
 from agentcop.event import SentinelEvent
 
 
@@ -235,15 +236,13 @@ class DatadogSentinelAdapter:
                         adapter_self._gate or adapter_self._permissions
                     ):
                         span_name = raw.get("span_name", "unknown")
-                        try:
+                        with contextlib.suppress(PermissionError):
                             check_tool_call(
                                 adapter_self,
                                 span_name,
                                 {"component": raw.get("component", "")},
                                 context={"service": raw.get("service", "")},
-                            )
-                        except PermissionError:
-                            pass  # already buffered as gate_denied / permission_violation
+                            )  # already buffered as gate_denied / permission_violation on suppress
                     adapter_self._buffer_event(adapter_self.to_sentinel_event(raw))
                 except Exception:
                     pass  # never let adapter errors disrupt ddtrace export

@@ -10,13 +10,12 @@ import pytest
 
 from agentcop import SentinelAdapter, SentinelEvent
 from agentcop.adapters.moltbook import (
-    MoltbookSentinelAdapter,
     _BASELINE_MIN_EVENTS,
     _INJECTION_PATTERNS,
     _SPIKE_THRESHOLD,
+    MoltbookSentinelAdapter,
     _require_moltbook,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -263,7 +262,9 @@ class TestFromPostReceived:
         assert _make_adapter().to_sentinel_event(_post_received()).source_system == "moltbook"
 
     def test_body_contains_post_id_and_author(self):
-        e = _make_adapter().to_sentinel_event(_post_received(post_id="p-99", author_agent_id="bot-x"))
+        e = _make_adapter().to_sentinel_event(
+            _post_received(post_id="p-99", author_agent_id="bot-x")
+        )
         assert "p-99" in e.body
         assert "bot-x" in e.body
 
@@ -629,7 +630,10 @@ class TestFromUpvoteGiven:
         assert _make_adapter().to_sentinel_event(self._raw()).severity == "INFO"
 
     def test_post_id_in_attributes(self):
-        assert _make_adapter().to_sentinel_event(self._raw()).attributes["moltbook.post_id"] == "p-001"
+        assert (
+            _make_adapter().to_sentinel_event(self._raw()).attributes["moltbook.post_id"]
+            == "p-001"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -676,7 +680,10 @@ class TestFromFeedFetched:
         assert _make_adapter().to_sentinel_event(self._raw()).event_type == "feed_fetched"
 
     def test_count_in_attributes(self):
-        assert _make_adapter().to_sentinel_event(self._raw(count=25)).attributes["moltbook.count"] == 25
+        assert (
+            _make_adapter().to_sentinel_event(self._raw(count=25)).attributes["moltbook.count"]
+            == 25
+        )
 
     def test_submolt_in_attributes(self):
         e = _make_adapter().to_sentinel_event(self._raw(submolt="r/tech"))
@@ -815,9 +822,7 @@ class TestBehavioralBaseline:
 
     def test_submolt_joined_adds_to_known_submolts(self):
         a = _make_adapter()
-        a.to_sentinel_event(
-            {"type": "submolt_joined", "submolt": "r/gaming", "session_id": "s"}
-        )
+        a.to_sentinel_event({"type": "submolt_joined", "submolt": "r/gaming", "session_id": "s"})
         a.drain()
         assert "r/gaming" in a._known_submolts
 
@@ -835,7 +840,9 @@ class TestBehavioralBaseline:
 
 
 class TestDriftDetection:
-    def _adapter_past_baseline(self, known_submolts=None, known_agents=None) -> MoltbookSentinelAdapter:
+    def _adapter_past_baseline(
+        self, known_submolts=None, known_agents=None
+    ) -> MoltbookSentinelAdapter:
         a = _make_adapter(agent_id="drift-bot", session_id="drift-sess")
         # Manually establish baseline state
         a._baseline_established = True
@@ -894,9 +901,9 @@ class TestDriftDetection:
 
     def test_reply_hijack_triggers_when_rate_exceeds_5x(self):
         a = self._adapter_past_baseline()
-        a._baseline_reply_rate = 0.1   # 1 reply per 10 posts
+        a._baseline_reply_rate = 0.1  # 1 reply per 10 posts
         a._total_posts_received = 10
-        a._total_replies_sent = 6      # already 6 — next reply_created will make it 7 = 70x
+        a._total_replies_sent = 6  # already 6 — next reply_created will make it 7 = 70x
         a.to_sentinel_event(
             {
                 "type": "reply_created",
@@ -917,9 +924,7 @@ class TestDriftDetection:
         a.to_sentinel_event(
             {"type": "reply_created", "reply_id": "rc-100", "session_id": "sess-1"}
         )
-        hijack = next(
-            (e for e in a.drain() if e.event_type == "moltbook_reply_hijack"), None
-        )
+        hijack = next((e for e in a.drain() if e.event_type == "moltbook_reply_hijack"), None)
         assert hijack is not None
         assert "baseline_rate" in hijack.attributes
         assert "current_rate" in hijack.attributes
@@ -991,7 +996,8 @@ class TestDriftDetection:
         a = _make_adapter()
         a.to_sentinel_event(_post_received(submolt="r/brand-new"))
         assert not any(
-            e.event_type in (
+            e.event_type
+            in (
                 "moltbook_submolt_drift",
                 "moltbook_agent_spike",
                 "moltbook_reply_hijack",
@@ -1010,9 +1016,7 @@ class TestDrainAndFlush:
     def test_drain_returns_buffered_events(self):
         a = _make_adapter()
         a._baseline_established = True
-        a.to_sentinel_event(
-            _post_received(submolt="r/new-submolt")
-        )
+        a.to_sentinel_event(_post_received(submolt="r/new-submolt"))
         events = a.drain()
         assert len(events) > 0
 
@@ -1134,9 +1138,7 @@ class TestOtelTraceCorrelation:
         assert "moltbook.submolt" in e.attributes
 
     def test_skill_event_badge_uses_moltbook_namespace(self):
-        raw = _skill_executed(
-            badge_id="badge-otel", badge_tier="SECURED", badge_score=95
-        )
+        raw = _skill_executed(badge_id="badge-otel", badge_tier="SECURED", badge_score=95)
         e = _make_adapter().to_sentinel_event(raw)
         assert "moltbook.skill_badge_id" in e.attributes
         assert "moltbook.skill_badge_tier" in e.attributes
@@ -1204,7 +1206,9 @@ class TestThreadSafety:
 
         # Total events across all drain calls must not have duplicates
         all_ids = [e.event_id for batch in drained for e in batch]
-        assert len(all_ids) == len(set(all_ids)), "Duplicate event IDs found after concurrent drain"
+        assert len(all_ids) == len(set(all_ids)), (
+            "Duplicate event IDs found after concurrent drain"
+        )
 
     def test_baseline_state_consistent_under_concurrency(self):
         """Baseline counters must be correct after concurrent ingestion."""

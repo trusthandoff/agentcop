@@ -120,7 +120,10 @@ class AutoApprovePolicy:
 
     def evaluate(self, request: ApprovalRequest) -> tuple[ApprovalStatus, str]:
         if request.risk_score <= self._threshold:
-            return "approved", f"risk score {request.risk_score} within threshold {self._threshold}"
+            return (
+                "approved",
+                f"risk score {request.risk_score} within threshold {self._threshold}",
+            )
         return "denied", (
             f"risk score {request.risk_score} exceeds auto-approve threshold {self._threshold}"
         )
@@ -144,7 +147,10 @@ class AutoDenyPolicy:
             return "denied", (
                 f"risk score {request.risk_score} at or above deny threshold {self._threshold}"
             )
-        return "approved", f"risk score {request.risk_score} below deny threshold {self._threshold}"
+        return (
+            "approved",
+            f"risk score {request.risk_score} below deny threshold {self._threshold}",
+        )
 
 
 class CallbackApprovalPolicy:
@@ -269,9 +275,7 @@ class ApprovalGate:
         with self._lock:
             req = self._requests[request_id]
             if req.status != "pending":
-                raise ValueError(
-                    f"Cannot deny request {request_id!r}: status is {req.status!r}"
-                )
+                raise ValueError(f"Cannot deny request {request_id!r}: status is {req.status!r}")
             req.status = "denied"
             req.reason = reason
             req.resolved_at = datetime.now(UTC)
@@ -286,9 +290,7 @@ class ApprovalGate:
         """Like :meth:`request`, but raises :class:`ApprovalDenied` when denied."""
         req = self.request(tool, args, risk_score)
         if not req.approved:
-            raise ApprovalDenied(
-                f"Tool {tool!r} was not approved: {req.reason}"
-            )
+            raise ApprovalDenied(f"Tool {tool!r} was not approved: {req.reason}")
         return req
 
     # ── Inspection ────────────────────────────────────────────────────────
@@ -466,9 +468,7 @@ class ApprovalBoundary:
                 self._requests[req.request_id] = req
                 self._events[req.request_id] = event
             self._dispatch(req)
-            timer = threading.Timer(
-                self.timeout, self._on_timeout, args=(req.request_id,)
-            )
+            timer = threading.Timer(self.timeout, self._on_timeout, args=(req.request_id,))
             timer.daemon = True
             timer.start()
             with self._lock:
@@ -497,9 +497,7 @@ class ApprovalBoundary:
             if req is None:
                 raise KeyError(request_id)
             if req.status != "pending":
-                raise ValueError(
-                    f"Cannot approve {request_id!r}: status is {req.status!r}"
-                )
+                raise ValueError(f"Cannot approve {request_id!r}: status is {req.status!r}")
             req.status = "approved"
             req.reason = reason
             req.resolved_at = datetime.now(UTC)
@@ -533,9 +531,7 @@ class ApprovalBoundary:
             if req is None:
                 raise KeyError(request_id)
             if req.status != "pending":
-                raise ValueError(
-                    f"Cannot deny {request_id!r}: status is {req.status!r}"
-                )
+                raise ValueError(f"Cannot deny {request_id!r}: status is {req.status!r}")
             req.status = "denied"
             req.reason = reason
             req.resolved_at = datetime.now(UTC)
@@ -669,7 +665,16 @@ class ApprovalBoundary:
                     "INSERT INTO audit_trail"
                     " (timestamp, request_id, event, tool, risk_score, actor, reason, detail)"
                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (ts, req.request_id, event, req.tool, req.risk_score, actor, reason, detail_json),
+                    (
+                        ts,
+                        req.request_id,
+                        event,
+                        req.tool,
+                        req.risk_score,
+                        actor,
+                        reason,
+                        detail_json,
+                    ),
                 )
                 self._conn.execute("COMMIT")
             except Exception:
@@ -690,9 +695,7 @@ class ApprovalBoundary:
                     detail={"channel": str(channel), "error": str(exc)},
                 )
 
-    def _send_to_channel(
-        self, channel: str | dict[str, Any], req: ApprovalRequest
-    ) -> None:
+    def _send_to_channel(self, channel: str | dict[str, Any], req: ApprovalRequest) -> None:
         import sys
 
         ctype = channel if isinstance(channel, str) else channel.get("type", "")
@@ -722,9 +725,7 @@ class ApprovalBoundary:
                 file=sys.stderr,
             )
 
-    def _channel_payload(
-        self, req: ApprovalRequest, channel_type: str
-    ) -> dict[str, Any]:
+    def _channel_payload(self, req: ApprovalRequest, channel_type: str) -> dict[str, Any]:
         if channel_type == "slack":
             return {
                 "text": (

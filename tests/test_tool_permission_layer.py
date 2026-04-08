@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -16,7 +16,6 @@ from agentcop.permissions import (
     ToolPermissionLayer,
     WritePermission,
 )
-
 
 # ---------------------------------------------------------------------------
 # PermissionResult
@@ -68,7 +67,15 @@ class TestPermissionBase:
 class TestReadPermission:
     def test_covers_default_tools(self):
         perm = ReadPermission(paths=["/data/*"])
-        for tool in ("file_read", "read_file", "open_file", "read", "get_file", "load_file", "cat"):
+        for tool in (
+            "file_read",
+            "read_file",
+            "open_file",
+            "read",
+            "get_file",
+            "load_file",
+            "cat",
+        ):
             assert perm.covers(tool) is True, f"should cover {tool!r}"
 
     def test_covers_custom_tool_names(self):
@@ -281,12 +288,18 @@ class TestToolPermissionLayerDeclare:
 
     def test_multiple_permissions(self):
         layer = ToolPermissionLayer()
-        layer.declare("agent-1", [
-            WritePermission(paths=["/tmp/*"]),
-            NetworkPermission(domains=["api.openai.com"]),
-        ])
+        layer.declare(
+            "agent-1",
+            [
+                WritePermission(paths=["/tmp/*"]),
+                NetworkPermission(domains=["api.openai.com"]),
+            ],
+        )
         assert layer.verify("agent-1", "file_write", {"path": "/tmp/x"}).granted is True
-        assert layer.verify("agent-1", "http_post", {"url": "https://api.openai.com/"}).granted is True
+        assert (
+            layer.verify("agent-1", "http_post", {"url": "https://api.openai.com/"}).granted
+            is True
+        )
 
     def test_tool_not_in_any_permission_denied(self):
         layer = ToolPermissionLayer()
@@ -306,10 +319,13 @@ class TestToolPermissionLayerScope:
     def test_first_passing_permission_wins(self):
         """If first permission fails scope but second passes, call is allowed."""
         layer = ToolPermissionLayer()
-        layer.declare("agent-1", [
-            WritePermission(paths=["/logs/*"], tool_names=["write"]),
-            WritePermission(paths=["/tmp/*"], tool_names=["write"]),
-        ])
+        layer.declare(
+            "agent-1",
+            [
+                WritePermission(paths=["/logs/*"], tool_names=["write"]),
+                WritePermission(paths=["/tmp/*"], tool_names=["write"]),
+            ],
+        )
         result = layer.verify("agent-1", "write", {"path": "/tmp/x"})
         assert result.granted is True
 
@@ -322,7 +338,10 @@ class TestToolPermissionLayerScope:
     def test_network_domain_scope(self):
         layer = ToolPermissionLayer()
         layer.declare("agent-1", [NetworkPermission(domains=["api.openai.com", "agentcop.live"])])
-        assert layer.verify("agent-1", "http_get", {"url": "https://api.openai.com/v1"}).granted is True
+        assert (
+            layer.verify("agent-1", "http_get", {"url": "https://api.openai.com/v1"}).granted
+            is True
+        )
         assert layer.verify("agent-1", "http_get", {"url": "https://evil.com"}).granted is False
 
 
@@ -391,12 +410,13 @@ class TestPermissionViolationEvent:
 
     def test_violation_event_uses_real_sentinel(self):
         """Integration: push to a real Sentinel and detect violations."""
-        from agentcop import Sentinel, SentinelEvent, ViolationRecord
+        from agentcop import Sentinel, SentinelEvent
         from agentcop.event import ViolationRecord as VR
 
         captured: list[SentinelEvent] = []
 
         sentinel = Sentinel()
+
         # Register a detector that captures the permission_violation event
         def _capture(event: SentinelEvent) -> VR | None:
             if event.event_type == "permission_violation":
@@ -443,10 +463,13 @@ class TestGateIntegration:
         from agentcop.gate import ExecutionGate
 
         layer = ToolPermissionLayer()
-        layer.declare("agent-1", [
-            WritePermission(paths=["/tmp/*"]),
-            NetworkPermission(domains=["safe.com"]),
-        ])
+        layer.declare(
+            "agent-1",
+            [
+                WritePermission(paths=["/tmp/*"]),
+                NetworkPermission(domains=["safe.com"]),
+            ],
+        )
         gate = ExecutionGate(db_path=":memory:")
         layer.attach_to_gate(gate, "agent-1")
 
@@ -526,10 +549,9 @@ class TestThreadSafety:
                 except Exception as exc:
                     errors.append(exc)
 
-        threads = (
-            [threading.Thread(target=declarer) for _ in range(3)]
-            + [threading.Thread(target=verifier) for _ in range(3)]
-        )
+        threads = [threading.Thread(target=declarer) for _ in range(3)] + [
+            threading.Thread(target=verifier) for _ in range(3)
+        ]
         for t in threads:
             t.start()
         for t in threads:

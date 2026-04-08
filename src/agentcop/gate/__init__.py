@@ -160,9 +160,7 @@ class RateLimitPolicy:
             cutoff = now - self._window
             self._calls = [t for t in self._calls if t >= cutoff]
             if len(self._calls) >= self._max_calls:
-                return GateDecision(
-                    allowed=False, reason=self._deny_reason, risk_score=60
-                )
+                return GateDecision(allowed=False, reason=self._deny_reason, risk_score=60)
             self._calls.append(now)
         return GateDecision(allowed=True, reason="within rate limit", risk_score=0)
 
@@ -241,9 +239,7 @@ class ExecutionGate:
                 )
                 cursor = self._conn.execute("SELECT version FROM schema_version")
                 if cursor.fetchone() is None:
-                    self._conn.execute(
-                        "INSERT INTO schema_version VALUES (?)", (_SCHEMA_VERSION,)
-                    )
+                    self._conn.execute("INSERT INTO schema_version VALUES (?)", (_SCHEMA_VERSION,))
                 self._conn.execute("COMMIT")
             except Exception:
                 self._conn.execute("ROLLBACK")
@@ -281,9 +277,7 @@ class ExecutionGate:
         with self._policy_lock:
             policy = self._policies.get(tool_name)
         if policy is None:
-            decision = GateDecision(
-                allowed=True, reason="no policy registered", risk_score=0
-            )
+            decision = GateDecision(allowed=True, reason="no policy registered", risk_score=0)
         else:
             decision = policy.check(tool_name, args, context)
         self._log(tool_name, args, decision)
@@ -309,9 +303,7 @@ class ExecutionGate:
             bound.apply_defaults()
             decision = self.check(fn.__name__, dict(bound.arguments))
             if not decision.allowed:
-                raise PermissionError(
-                    f"ExecutionGate denied {fn.__name__!r}: {decision.reason}"
-                )
+                raise PermissionError(f"ExecutionGate denied {fn.__name__!r}: {decision.reason}")
             return fn(*args, **kwargs)
 
         return _wrapper

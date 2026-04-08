@@ -42,8 +42,9 @@ from urllib.parse import quote
 from pydantic import BaseModel, Field
 
 from . import __version__
+from .config import BADGE_BASE_URL, X_SHARE_BASE_URL
 
-BADGE_BASE_URL = "https://agentcop.live/badge"
+__all__ = ["BADGE_BASE_URL"]  # re-export so existing imports from badge stay valid
 _BADGE_EXPIRY_DAYS = 30
 _REVOKE_TRUST_THRESHOLD = 30.0
 _RENEW_THRESHOLD_DAYS = 7
@@ -284,9 +285,7 @@ class SQLiteBadgeStore(BadgeStore):
 
     def load(self, badge_id: str) -> AgentBadge | None:
         with self._lock:
-            cursor = self._conn.execute(
-                "SELECT data FROM badges WHERE badge_id = ?", (badge_id,)
-            )
+            cursor = self._conn.execute("SELECT data FROM badges WHERE badge_id = ?", (badge_id,))
             row = cursor.fetchone()
         if row is None:
             return None
@@ -305,9 +304,7 @@ class SQLiteBadgeStore(BadgeStore):
 
     def revoke(self, badge_id: str, reason: str = "") -> bool:
         with self._lock:
-            cursor = self._conn.execute(
-                "SELECT data FROM badges WHERE badge_id = ?", (badge_id,)
-            )
+            cursor = self._conn.execute("SELECT data FROM badges WHERE badge_id = ?", (badge_id,))
             row = cursor.fetchone()
             if row is None:
                 return False
@@ -648,7 +645,7 @@ def generate_badge_card(badge: AgentBadge) -> str:
         f"my agent just got agentcop {tier} {emoji} score: {score}/100 "
         f"→ {badge.verification_url} #AgentSecurity #agentcop"
     )
-    x_share_url = f"https://x.com/intent/tweet?text={share_text}"
+    x_share_url = f"{X_SHARE_BASE_URL}?text={share_text}"
 
     return f"""<!DOCTYPE html>
 <html lang="en">

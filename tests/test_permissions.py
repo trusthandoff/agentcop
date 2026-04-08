@@ -11,7 +11,6 @@ from agentcop.permissions import (
     ToolPermission,
 )
 
-
 # ---------------------------------------------------------------------------
 # ToolPermission
 # ---------------------------------------------------------------------------
@@ -133,7 +132,9 @@ class TestPermissionChecker:
         ps = PermissionSet()
         ps.grant("admin", ToolPermission(tool="*", allow=True))
         ps.grant("readonly", ToolPermission(tool="file_read", allow=True))
-        ps.grant("readonly", ToolPermission(tool="file_write", allow=False, deny_reason="read-only"))
+        ps.grant(
+            "readonly", ToolPermission(tool="file_write", allow=False, deny_reason="read-only")
+        )
         return PermissionChecker(ps, default_allow=default_allow)
 
     def test_admin_wildcard_allows_any(self):

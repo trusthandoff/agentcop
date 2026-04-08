@@ -257,9 +257,7 @@ class _ProtectedAgent:
                     reason=decision.reason,
                     risk_score=decision.risk_score,
                 )
-                raise PermissionError(
-                    f"AgentCop gate denied execution: {decision.reason}"
-                )
+                raise PermissionError(f"AgentCop gate denied execution: {decision.reason}")
 
         # ── Stage 3: ToolPermissionLayer ──────────────────────────────────
         if cop.permissions is not None and cop.agent_id is not None:
@@ -271,9 +269,7 @@ class _ProtectedAgent:
                     f"Permission denied for agent {cop.agent_id!r}: {result.reason}",
                     reason=result.reason,
                 )
-                raise PermissionError(
-                    f"AgentCop permission denied: {result.reason}"
-                )
+                raise PermissionError(f"AgentCop permission denied: {result.reason}")
 
         # ── Stage 4: ApprovalBoundary ─────────────────────────────────────
         if cop.approvals is not None:
@@ -294,9 +290,7 @@ class _ProtectedAgent:
                     request_id=req.request_id,
                     reason=req.reason,
                 )
-                raise PermissionError(
-                    f"AgentCop approval denied: {req.reason}"
-                )
+                raise PermissionError(f"AgentCop approval denied: {req.reason}")
 
         # ── Stage 5: Sandbox + execution ──────────────────────────────────
         from agentcop.sandbox import SandboxViolation
@@ -326,7 +320,4 @@ class _ProtectedAgent:
     def __repr__(self) -> str:
         agent = object.__getattribute__(self, "_agent")
         cop = object.__getattribute__(self, "_cop")
-        return (
-            f"_ProtectedAgent(agent={agent!r}, "
-            f"layers={cop.active_layer_count}/4)"
-        )
+        return f"_ProtectedAgent(agent={agent!r}, layers={cop.active_layer_count}/4)"

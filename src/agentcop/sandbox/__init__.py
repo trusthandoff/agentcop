@@ -54,6 +54,7 @@ _REAL_SUBPROCESS_RUN = _subprocess_mod.run
 
 try:
     import requests as _requests_mod  # type: ignore[import-untyped]
+
     _HAS_REQUESTS = True
     _REAL_REQUESTS_REQUEST = _requests_mod.Session.request
 except ImportError:

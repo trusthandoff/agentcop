@@ -129,8 +129,8 @@ _SUSPICIOUS_UNICODE: frozenset[str] = frozenset(
 _URL_PATTERN = re.compile(r"https?://[^\s<>\"']+")
 
 # Drift thresholds
-_SPIKE_THRESHOLD = 5          # consecutive posts from unknown agents before WARNING
-_BASELINE_MIN_EVENTS = 20     # events processed before drift detection activates
+_SPIKE_THRESHOLD = 5  # consecutive posts from unknown agents before WARNING
+_BASELINE_MIN_EVENTS = 20  # events processed before drift detection activates
 
 
 class MoltbookSentinelAdapter:
@@ -435,9 +435,7 @@ class MoltbookSentinelAdapter:
     # Skill badge verification
     # ------------------------------------------------------------------
 
-    def _classify_skill_event(
-        self, raw: dict[str, Any]
-    ) -> tuple[str, str, dict[str, Any]]:
+    def _classify_skill_event(self, raw: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
         """Determine event_type, severity, and extra attrs for a skill_executed event.
 
         Reads badge metadata from the raw event dict (populated by the Moltbook
@@ -580,9 +578,7 @@ class MoltbookSentinelAdapter:
             elif event_type == "reply_created":
                 self._total_replies_sent += 1
                 if self._baseline_established and self._baseline_reply_rate > 0:
-                    current_rate = self._total_replies_sent / max(
-                        self._total_posts_received, 1
-                    )
+                    current_rate = self._total_replies_sent / max(self._total_posts_received, 1)
                     if current_rate > 5.0 * self._baseline_reply_rate:
                         drift_events.append(
                             SentinelEvent(
@@ -610,7 +606,9 @@ class MoltbookSentinelAdapter:
                 submolt = raw.get("submolt", "")
                 if not self._baseline_established and submolt:
                     self._known_submolts.add(submolt)
-                elif self._baseline_established and submolt and submolt not in self._known_submolts:
+                elif (
+                    self._baseline_established and submolt and submolt not in self._known_submolts
+                ):
                     drift_events.append(
                         SentinelEvent(
                             event_id=f"mb-drift-{uuid.uuid4()}",
@@ -635,7 +633,9 @@ class MoltbookSentinelAdapter:
                 submolt = raw.get("submolt", "")
                 if not self._baseline_established and submolt:
                     self._known_submolts.add(submolt)
-                elif self._baseline_established and submolt and submolt not in self._known_submolts:
+                elif (
+                    self._baseline_established and submolt and submolt not in self._known_submolts
+                ):
                     drift_events.append(
                         SentinelEvent(
                             event_id=f"mb-drift-{uuid.uuid4()}",
@@ -987,10 +987,7 @@ class MoltbookSentinelAdapter:
             event_type="post_created",
             timestamp=ts,
             severity="INFO",
-            body=(
-                f"post '{post_id}' created"
-                + (f" in submolt '{submolt}'" if submolt else "")
-            ),
+            body=(f"post '{post_id}' created" + (f" in submolt '{submolt}'" if submolt else "")),
             source_system=self.source_system,
             trace_id=trace_id,
             attributes=attrs,
@@ -1071,8 +1068,7 @@ class MoltbookSentinelAdapter:
             timestamp=ts,
             severity="INFO",
             body=(
-                f"feed fetched ({count} posts)"
-                + (f" from submolt '{submolt}'" if submolt else "")
+                f"feed fetched ({count} posts)" + (f" from submolt '{submolt}'" if submolt else "")
             ),
             source_system=self.source_system,
             trace_id=trace_id,

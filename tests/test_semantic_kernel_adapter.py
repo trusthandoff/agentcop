@@ -1215,5 +1215,7 @@ class TestRuntimeSecuritySemanticKernel:
 
     def test_no_gate_backward_compatible(self):
         a = _make_sk_runtime()
-        event = a.to_sentinel_event({"type": "function_invoking", "plugin_name": "P", "function_name": "F"})
+        event = a.to_sentinel_event(
+            {"type": "function_invoking", "plugin_name": "P", "function_name": "F"}
+        )
         assert event.event_type == "function_invoking"

@@ -621,7 +621,9 @@ class TestSentinelIntegration:
 # ---------------------------------------------------------------------------
 
 
-def _make_adapter_runtime(gate=None, permissions=None, sandbox=None, approvals=None, identity=None):
+def _make_adapter_runtime(
+    gate=None, permissions=None, sandbox=None, approvals=None, identity=None
+):
     with patch("agentcop.adapters.langgraph._require_langgraph"):
         from agentcop.adapters.langgraph import LangGraphSentinelAdapter
 
@@ -658,8 +660,11 @@ class TestRuntimeSecurityLangGraph:
         approvals = MagicMock()
         identity = MagicMock()
         a = _make_adapter_runtime(
-            gate=gate, permissions=perms, sandbox=sandbox,
-            approvals=approvals, identity=identity,
+            gate=gate,
+            permissions=perms,
+            sandbox=sandbox,
+            approvals=approvals,
+            identity=identity,
         )
         assert a._gate is gate
         assert a._permissions is perms

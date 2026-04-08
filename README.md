@@ -1,9 +1,19 @@
+[English](README.md) | [中文](README.zh.md)
+
+<p align="center">
+  <img src="https://agentcop.live/logo.png" alt="agentcop" width="120" />
+</p>
+
 # agentcop — The Agent Cop
 
 [![CI](https://github.com/trusthandoff/agentcop/actions/workflows/test.yml/badge.svg)](https://github.com/trusthandoff/agentcop/actions/workflows/test.yml)
 [![PyPI](https://img.shields.io/pypi/v/agentcop)](https://pypi.org/project/agentcop/)
-[![Python](https://img.shields.io/pypi/pyversions/agentcop)](https://pypi.org/project/agentcop/)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://pypi.org/project/agentcop/)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://pypi.org/project/agentcop/)
+[![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://pypi.org/project/agentcop/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Twitter @theagentcop](https://img.shields.io/badge/Twitter-@theagentcop-1DA1F2?logo=twitter&logoColor=white)](https://twitter.com/theagentcop)
+[![Moltbook](https://img.shields.io/badge/Moltbook-%F0%9F%A6%9E-8B5CF6)](https://moltbook.com)
 
 **The cop for agent fleets.**
 

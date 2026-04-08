@@ -10,14 +10,13 @@ import urllib.request
 import pytest
 
 from agentcop.sandbox import (
-    AgentSandbox,
-    SandboxTimeoutError,
-    SandboxViolation,
     _REAL_OPEN,
     _REAL_SUBPROCESS_RUN,
     _REAL_URLOPEN,
+    AgentSandbox,
+    SandboxTimeoutError,
+    SandboxViolation,
 )
-
 
 # ---------------------------------------------------------------------------
 # SandboxTimeoutError
@@ -163,16 +162,16 @@ class TestPathInterception:
         """builtins.open is patched to block paths outside allowed_paths."""
         import builtins
 
-        with AgentSandbox(allowed_paths=[str(tmp_path) + "/*"]) as sb:
+        with AgentSandbox(allowed_paths=[str(tmp_path) + "/*"]):
             # allowed path: open succeeds
             allowed = tmp_path / "allowed.txt"
             allowed.write_text("ok")
-            fh = builtins.open(str(allowed), "r")
-            fh.close()
+            with builtins.open(str(allowed)):
+                pass
 
             # blocked path: raises SandboxViolation with violation_type="path_blocked"
             with pytest.raises(SandboxViolation) as ei:
-                builtins.open("/etc/hostname", "r")
+                builtins.open("/etc/hostname")  # noqa: SIM115
             assert ei.value.violation_type == "path_blocked"
 
     def test_patches_installed_and_removed(self, tmp_path):
@@ -200,10 +199,10 @@ class TestPathInterception:
         file_obj = _REAL_OPEN(str(f))
         fd = file_obj.fileno()
         try:
-            with AgentSandbox(allowed_paths=["/nonexistent/*"]) as sb:
+            with AgentSandbox(allowed_paths=["/nonexistent/*"]):
                 # integer fd should not trigger path check
-                fh = builtins.open(fd, closefd=False)
-                fh.close()
+                with builtins.open(fd, closefd=False):
+                    pass
         finally:
             file_obj.close()
 
@@ -255,9 +254,7 @@ class TestSubprocessInterception:
         """Bare command names (not absolute paths) are not path-checked."""
         with AgentSandbox(allowed_paths=[str(tmp_path) + "/*"]):
             # "echo" is a bare command — no path check
-            result = subprocess.run(
-                ["echo", "hello"], capture_output=True, text=True
-            )
+            result = subprocess.run(["echo", "hello"], capture_output=True, text=True)
             assert result.returncode == 0
 
     def test_subprocess_restored_after_exit(self):
@@ -357,28 +354,28 @@ class TestPermissionLayerIntegration:
         from agentcop.permissions import ToolPermissionLayer
 
         layer = ToolPermissionLayer()
-        sb = AgentSandbox(
-            permission_layer=layer, agent_id="unknown", intercept_syscalls=False
-        )
+        sb = AgentSandbox(permission_layer=layer, agent_id="unknown", intercept_syscalls=False)
         assert sb.allowed_paths == []
 
     def test_enforced_at_runtime(self, tmp_path):
         """Integration: sandbox inherited from layer blocks paths at open() time."""
-        from agentcop.permissions import ToolPermissionLayer, WritePermission
         import builtins
+
+        from agentcop.permissions import ToolPermissionLayer, WritePermission
 
         layer = ToolPermissionLayer()
         layer.declare("agent-1", [WritePermission(paths=[str(tmp_path) + "/*"])])
 
-        with AgentSandbox(permission_layer=layer, agent_id="agent-1") as sb:
+        with AgentSandbox(permission_layer=layer, agent_id="agent-1"):
             # Path from layer — allowed
             allowed = tmp_path / "ok.txt"
             allowed.write_text("data")
-            builtins.open(str(allowed), "r").close()
+            with builtins.open(str(allowed)):
+                pass
 
             # Path not in layer — blocked
             with pytest.raises(SandboxViolation):
-                builtins.open("/etc/hostname", "r")
+                builtins.open("/etc/hostname")  # noqa: SIM115
 
 
 # ---------------------------------------------------------------------------
@@ -400,7 +397,7 @@ class TestSandboxThreadSafety:
             f = tmp_path / "worker.txt"
             f.write_text("hi")
             try:
-                builtins.open(str(f), "r").close()
+                builtins.open(str(f)).close()
                 results["worker_ok"] = True
             except SandboxViolation:
                 results["worker_ok"] = False
@@ -423,7 +420,7 @@ class TestSandboxThreadSafety:
 
         with AgentSandbox(allowed_paths=[str(tmp_path) + "/*"]):
             with AgentSandbox(allowed_paths=[str(tmp_path) + "/*"]):
-                builtins.open(str(allowed), "r").close()
-            builtins.open(str(allowed), "r").close()
+                builtins.open(str(allowed)).close()
+            builtins.open(str(allowed)).close()
         # After both exit, real open is restored
         assert builtins.open is _REAL_OPEN

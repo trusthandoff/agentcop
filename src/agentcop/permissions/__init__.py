@@ -433,12 +433,7 @@ class NetworkPermission(Permission):
         return False
 
     def check_scope(self, args: dict[str, Any]) -> tuple[bool, str]:
-        raw = (
-            args.get("url")
-            or args.get("endpoint")
-            or args.get("host")
-            or args.get("domain", "")
-        )
+        raw = args.get("url") or args.get("endpoint") or args.get("host") or args.get("domain", "")
         if not raw:
             return True, "no network target argument to restrict"
         if not self.domains:
@@ -466,9 +461,7 @@ class ExecutePermission(Permission):
         {"shell_exec", "run_command", "execute", "bash", "exec", "subprocess", "run"}
     )
 
-    def __init__(
-        self, commands: list[str], *, tool_names: list[str] | None = None
-    ) -> None:
+    def __init__(self, commands: list[str], *, tool_names: list[str] | None = None) -> None:
         super().__init__(tool_names=tool_names)
         self.commands = list(commands)
 
@@ -673,8 +666,7 @@ class ToolPermissionLayer:
             timestamp=datetime.now(UTC),
             severity="ERROR",
             body=(
-                f"Permission denied: agent {agent_id!r} attempted "
-                f"{tool_name!r} — {result.reason}"
+                f"Permission denied: agent {agent_id!r} attempted {tool_name!r} — {result.reason}"
             ),
             source_system="agentcop.permissions",
             attributes={

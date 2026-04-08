@@ -17,21 +17,19 @@ Covers:
 
 from __future__ import annotations
 
-import json
 import threading
 import time
-import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
+from pydantic import ValidationError
 
 from agentcop.badge import (
     BADGE_BASE_URL,
     AgentBadge,
     BadgeIssuer,
-    BadgeStore,
     InMemoryBadgeStore,
     SQLiteBadgeStore,
     generate_badge_card,
@@ -40,7 +38,6 @@ from agentcop.badge import (
     tier_from_score,
 )
 from agentcop.identity import AgentIdentity
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -137,7 +134,7 @@ class TestAgentBadgeSchema:
         assert 29 <= delta.days <= 31
 
     def test_badge_is_immutable(self, sample_badge: AgentBadge):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             sample_badge.trust_score = 50.0  # type: ignore[misc]
 
     def test_badge_not_revoked_by_default(self, sample_badge: AgentBadge):
@@ -179,6 +176,7 @@ class TestAgentBadgeSchema:
 
     def test_agentcop_version_set(self, sample_badge: AgentBadge):
         from agentcop import __version__
+
         assert sample_badge.agentcop_version == __version__
 
     def test_public_key_is_pem(self, sample_badge: AgentBadge):
@@ -236,7 +234,9 @@ class TestBadgeSignature:
         tampered = sample_badge.model_copy(update={"public_key": other_issuer.public_key_pem()})
         assert not issuer.verify(tampered)
 
-    def test_expired_badge_signature_still_verifies(self, issuer: BadgeIssuer, store: InMemoryBadgeStore):
+    def test_expired_badge_signature_still_verifies(
+        self, issuer: BadgeIssuer, store: InMemoryBadgeStore
+    ):
         """Expired badge: signature is still valid (expiry is a lifecycle check, not crypto)."""
         past_badge = issuer.issue(
             agent_id="past-agent",
@@ -250,7 +250,9 @@ class TestBadgeSignature:
         # Expiry was changed post-signing, so signature is now invalid
         assert not issuer.verify(expired)
 
-    def test_revoked_badge_signature_still_verifies(self, issuer: BadgeIssuer, store: InMemoryBadgeStore):
+    def test_revoked_badge_signature_still_verifies(
+        self, issuer: BadgeIssuer, store: InMemoryBadgeStore
+    ):
         """Revocation flag doesn't invalidate the signature — it's a lifecycle state."""
         badge = issuer.issue(
             agent_id="revoked-agent",
@@ -289,7 +291,9 @@ class TestConstantTimeVerification:
     always calls the library's verify() which is constant-time at the C level.
     """
 
-    def test_verify_always_reaches_crypto_layer(self, issuer: BadgeIssuer, sample_badge: AgentBadge):
+    def test_verify_always_reaches_crypto_layer(
+        self, issuer: BadgeIssuer, sample_badge: AgentBadge
+    ):
         """verify() must call load_pem_public_key regardless of signature validity."""
         from cryptography.hazmat.primitives import serialization as _ser
 
@@ -316,11 +320,15 @@ class TestConstantTimeVerification:
         assert isinstance(result, bool)
         assert result is False
 
-    def test_empty_sig_returns_false_not_exception(self, issuer: BadgeIssuer, sample_badge: AgentBadge):
+    def test_empty_sig_returns_false_not_exception(
+        self, issuer: BadgeIssuer, sample_badge: AgentBadge
+    ):
         bad = sample_badge.model_copy(update={"signature": ""})
         assert issuer.verify(bad) is False
 
-    def test_malformed_public_key_returns_false(self, issuer: BadgeIssuer, sample_badge: AgentBadge):
+    def test_malformed_public_key_returns_false(
+        self, issuer: BadgeIssuer, sample_badge: AgentBadge
+    ):
         bad = sample_badge.model_copy(update={"public_key": "not-a-pem"})
         assert issuer.verify(bad) is False
 
@@ -372,7 +380,6 @@ class TestAutoRevocation:
         assert not badge.revoked
 
         # Hammer trust below 30 with CRITICAL violations
-        from agentcop.event import ViolationRecord
 
         v = ViolationRecord(
             violation_type="test_violation",
@@ -441,9 +448,7 @@ class TestAutoRenewal:
             store=store,
         )
         # Simulate expiry in 3 days
-        soon = badge.model_copy(
-            update={"expires_at": datetime.now(UTC) + timedelta(days=3)}
-        )
+        soon = badge.model_copy(update={"expires_at": datetime.now(UTC) + timedelta(days=3)})
         assert soon.expires_soon(threshold_days=7)
         assert not soon.expires_soon(threshold_days=2)
 
@@ -464,7 +469,7 @@ class TestInMemoryBadgeStore:
         assert store.load("nonexistent") is None
 
     def test_load_latest(self, store: InMemoryBadgeStore, issuer: BadgeIssuer):
-        b1 = issuer.issue(agent_id="agent-x", fingerprint="a" * 64, trust_score=70.0, store=store)
+        issuer.issue(agent_id="agent-x", fingerprint="a" * 64, trust_score=70.0, store=store)
         time.sleep(0.01)
         b2 = issuer.issue(agent_id="agent-x", fingerprint="b" * 64, trust_score=75.0, store=store)
         latest = store.load_latest("agent-x")
@@ -512,7 +517,9 @@ class TestInMemoryBadgeStore:
 class TestSQLiteBadgeStore:
     def test_save_and_load(self, sqlite_store: SQLiteBadgeStore):
         issuer = BadgeIssuer(store=sqlite_store)
-        badge = issuer.issue(agent_id="sql-a", fingerprint="a" * 64, trust_score=80.0, store=sqlite_store)
+        badge = issuer.issue(
+            agent_id="sql-a", fingerprint="a" * 64, trust_score=80.0, store=sqlite_store
+        )
         loaded = sqlite_store.load(badge.badge_id)
         assert loaded is not None
         assert loaded.badge_id == badge.badge_id
@@ -521,14 +528,18 @@ class TestSQLiteBadgeStore:
         issuer = BadgeIssuer(store=sqlite_store)
         issuer.issue(agent_id="sql-b", fingerprint="a" * 64, trust_score=70.0, store=sqlite_store)
         time.sleep(0.01)
-        b2 = issuer.issue(agent_id="sql-b", fingerprint="b" * 64, trust_score=75.0, store=sqlite_store)
+        b2 = issuer.issue(
+            agent_id="sql-b", fingerprint="b" * 64, trust_score=75.0, store=sqlite_store
+        )
         latest = sqlite_store.load_latest("sql-b")
         assert latest is not None
         assert latest.badge_id == b2.badge_id
 
     def test_revoke(self, sqlite_store: SQLiteBadgeStore):
         issuer = BadgeIssuer(store=sqlite_store)
-        badge = issuer.issue(agent_id="sql-c", fingerprint="c" * 64, trust_score=60.0, store=sqlite_store)
+        badge = issuer.issue(
+            agent_id="sql-c", fingerprint="c" * 64, trust_score=60.0, store=sqlite_store
+        )
         assert sqlite_store.revoke(badge.badge_id, reason="test")
         loaded = sqlite_store.load(badge.badge_id)
         assert loaded is not None
@@ -544,7 +555,9 @@ class TestSQLiteBadgeStore:
         """Second BadgeIssuer with same store should reload the key pair."""
         i1 = BadgeIssuer(store=sqlite_store)
         i2 = BadgeIssuer(store=sqlite_store)
-        badge = i1.issue(agent_id="reload", fingerprint="r" * 64, trust_score=80.0, store=sqlite_store)
+        badge = i1.issue(
+            agent_id="reload", fingerprint="r" * 64, trust_score=80.0, store=sqlite_store
+        )
         assert i2.verify(badge)
 
     def test_list_badges_by_agent(self, sqlite_store: SQLiteBadgeStore):
@@ -561,12 +574,13 @@ class TestSQLiteBadgeStore:
     def test_shared_db_with_identity_store(self, tmp_path: Path):
         """Badge store can share the same agentcop.db as identity store."""
         from agentcop.identity import SQLiteIdentityStore
+
         db = tmp_path / "shared.db"
         id_store = SQLiteIdentityStore(str(db))
         badge_store = SQLiteBadgeStore(str(db))
         issuer = BadgeIssuer(store=badge_store)
 
-        identity = AgentIdentity.register(agent_id="shared", store=id_store)
+        AgentIdentity.register(agent_id="shared", store=id_store)
         badge = issuer.issue(
             agent_id="shared", fingerprint="s" * 64, trust_score=80.0, store=badge_store
         )
@@ -636,9 +650,7 @@ class TestIdentityGenerateBadge:
         assert not badge.revoked
 
         # Drop trust below 30
-        v = ViolationRecord(
-            violation_type="x", severity="CRITICAL", source_event_id="e1"
-        )
+        v = ViolationRecord(violation_type="x", severity="CRITICAL", source_event_id="e1")
         identity.observe_violation(v)  # 35 - 20 = 15 < 30
 
         latest = store.load_latest("watch-revoke")
@@ -652,7 +664,9 @@ class TestIdentityGenerateBadge:
 
 
 class TestSVGGeneration:
-    def _make_badge(self, issuer: BadgeIssuer, store: InMemoryBadgeStore, trust: float) -> AgentBadge:
+    def _make_badge(
+        self, issuer: BadgeIssuer, store: InMemoryBadgeStore, trust: float
+    ) -> AgentBadge:
         return issuer.issue(
             agent_id="svg-agent",
             fingerprint="s" * 64,
@@ -692,6 +706,7 @@ class TestSVGGeneration:
 
     def test_svg_is_valid_xml(self, sample_badge: AgentBadge):
         import xml.etree.ElementTree as ET
+
         svg = generate_svg(sample_badge)
         # Should parse without error
         ET.fromstring(svg)
@@ -729,6 +744,7 @@ class TestBadgeCardHTML:
 
     def test_card_contains_tier_color(self, sample_badge: AgentBadge):
         from agentcop.badge import _TIER_COLORS
+
         html = generate_badge_card(sample_badge)
         assert _TIER_COLORS[sample_badge.tier] in html
 
@@ -763,7 +779,9 @@ class TestBadgeCardHTML:
         assert "<html" in html
         assert "</html>" in html
 
-    def test_card_revoked_shows_revoked_status(self, issuer: BadgeIssuer, store: InMemoryBadgeStore):
+    def test_card_revoked_shows_revoked_status(
+        self, issuer: BadgeIssuer, store: InMemoryBadgeStore
+    ):
         badge = issuer.issue(
             agent_id="revoked-card",
             fingerprint="r" * 64,
@@ -773,7 +791,9 @@ class TestBadgeCardHTML:
         html = generate_badge_card(badge)
         assert "REVOKED" in html
 
-    def test_card_shows_at_risk_tier_for_low_trust(self, issuer: BadgeIssuer, store: InMemoryBadgeStore):
+    def test_card_shows_at_risk_tier_for_low_trust(
+        self, issuer: BadgeIssuer, store: InMemoryBadgeStore
+    ):
         badge = issuer.issue(
             agent_id="at-risk-card",
             fingerprint="a" * 64,
@@ -841,7 +861,9 @@ class TestThreadSafety:
         badge_ids = {b.badge_id for b in results}
         assert len(badge_ids) == 20  # all unique
 
-    def test_concurrent_verify(self, issuer: BadgeIssuer, store: InMemoryBadgeStore, sample_badge: AgentBadge):
+    def test_concurrent_verify(
+        self, issuer: BadgeIssuer, store: InMemoryBadgeStore, sample_badge: AgentBadge
+    ):
         """verify() is safe to call from multiple threads."""
         results: list[bool] = []
         errors: list[Exception] = []
@@ -931,7 +953,9 @@ class TestBadgeLiveEndpoints:
         db_path = tmp_path / "scanner_test.db"
 
         # Patch the module-level store/issuer to use our temp DB
-        import importlib.util, sys
+        import importlib.util
+        import sys
+
         _scanner_path = Path(__file__).parent.parent / "agentcop-scanner" / "main.py"
         _spec = importlib.util.spec_from_file_location("agentcop_scanner.main", _scanner_path)
         scanner_main = importlib.util.module_from_spec(_spec)
@@ -953,7 +977,9 @@ class TestBadgeLiveEndpoints:
 
     def test_get_badge_json(self, app_client):
         client, issuer, store = app_client
-        badge = issuer.issue(agent_id="live-a", fingerprint="a" * 64, trust_score=82.0, store=store)
+        badge = issuer.issue(
+            agent_id="live-a", fingerprint="a" * 64, trust_score=82.0, store=store
+        )
         resp = client.get(f"/badge/{badge.badge_id}")
         assert resp.status_code == 200
         data = resp.json()
@@ -967,7 +993,9 @@ class TestBadgeLiveEndpoints:
 
     def test_get_badge_card_html(self, app_client):
         client, issuer, store = app_client
-        badge = issuer.issue(agent_id="live-b", fingerprint="b" * 64, trust_score=70.0, store=store)
+        badge = issuer.issue(
+            agent_id="live-b", fingerprint="b" * 64, trust_score=70.0, store=store
+        )
         resp = client.get(f"/badge/{badge.badge_id}/card")
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]
@@ -975,7 +1003,9 @@ class TestBadgeLiveEndpoints:
 
     def test_get_badge_svg(self, app_client):
         client, issuer, store = app_client
-        badge = issuer.issue(agent_id="live-c", fingerprint="c" * 64, trust_score=60.0, store=store)
+        badge = issuer.issue(
+            agent_id="live-c", fingerprint="c" * 64, trust_score=60.0, store=store
+        )
         resp = client.get(f"/badge/{badge.badge_id}/svg")
         assert resp.status_code == 200
         assert "image/svg+xml" in resp.headers["content-type"]
@@ -983,7 +1013,9 @@ class TestBadgeLiveEndpoints:
 
     def test_get_badge_shield_redirect(self, app_client):
         client, issuer, store = app_client
-        badge = issuer.issue(agent_id="live-d", fingerprint="d" * 64, trust_score=50.0, store=store)
+        badge = issuer.issue(
+            agent_id="live-d", fingerprint="d" * 64, trust_score=50.0, store=store
+        )
         resp = client.get(f"/badge/{badge.badge_id}/shield", follow_redirects=False)
         assert resp.status_code == 302
         assert "shields.io" in resp.headers["location"]
@@ -996,7 +1028,9 @@ class TestBadgeLiveEndpoints:
 
     def test_post_verify_valid(self, app_client):
         client, issuer, store = app_client
-        badge = issuer.issue(agent_id="live-e", fingerprint="e" * 64, trust_score=80.0, store=store)
+        badge = issuer.issue(
+            agent_id="live-e", fingerprint="e" * 64, trust_score=80.0, store=store
+        )
         resp = client.post("/badge/verify", json=badge.model_dump(mode="json"))
         assert resp.status_code == 200
         data = resp.json()
@@ -1005,7 +1039,9 @@ class TestBadgeLiveEndpoints:
 
     def test_post_verify_tampered(self, app_client):
         client, issuer, store = app_client
-        badge = issuer.issue(agent_id="live-f", fingerprint="f" * 64, trust_score=75.0, store=store)
+        badge = issuer.issue(
+            agent_id="live-f", fingerprint="f" * 64, trust_score=75.0, store=store
+        )
         payload = badge.model_dump(mode="json")
         payload["trust_score"] = 100.0
         resp = client.post("/badge/verify", json=payload)
@@ -1056,18 +1092,20 @@ class TestCrossPlatform:
 class TestRequireBadgeGuard:
     def test_guard_passes_with_cryptography(self):
         from agentcop.badge import _require_badge
+
         _require_badge()  # should not raise
 
     def test_guard_raises_without_cryptography(self):
-        from agentcop.badge import _require_badge
 
         with patch.dict("sys.modules", {"cryptography": None}):
             import importlib
+
             import agentcop.badge as badge_mod
+
             importlib.reload(badge_mod)
             try:
                 badge_mod._require_badge()
-                assert False, "Should have raised ImportError"
+                raise AssertionError("Should have raised ImportError")
             except ImportError as e:
                 assert "agentcop[badge]" in str(e)
             finally:

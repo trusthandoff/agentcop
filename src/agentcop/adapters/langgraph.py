@@ -41,7 +41,7 @@ from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime
 from typing import Any
 
-from agentcop.adapters._runtime import check_tool_call, fire_security_event
+from agentcop.adapters._runtime import check_tool_call
 from agentcop.event import SentinelEvent
 
 

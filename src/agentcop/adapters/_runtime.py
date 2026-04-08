@@ -108,9 +108,7 @@ def check_tool_call(
             fire_security_event(
                 adapter, "permission_violation", tool_name, ah, result.reason, "CRITICAL"
             )
-            raise PermissionError(
-                f"Tool '{tool_name}' denied by permissions: {result.reason}"
-            )
+            raise PermissionError(f"Tool '{tool_name}' denied by permissions: {result.reason}")
 
     # 2. ExecutionGate check ───────────────────────────────────────────────
     gate = getattr(adapter, "_gate", None)
@@ -118,12 +116,8 @@ def check_tool_call(
     if gate is not None:
         decision = gate.check(tool_name, args, ctx)
         if not decision.allowed:
-            fire_security_event(
-                adapter, "gate_denied", tool_name, ah, decision.reason, "CRITICAL"
-            )
-            raise PermissionError(
-                f"Tool '{tool_name}' denied by gate: {decision.reason}"
-            )
+            fire_security_event(adapter, "gate_denied", tool_name, ah, decision.reason, "CRITICAL")
+            raise PermissionError(f"Tool '{tool_name}' denied by gate: {decision.reason}")
 
     # 3. ApprovalBoundary check ────────────────────────────────────────────
     approvals = getattr(adapter, "_approvals", None)

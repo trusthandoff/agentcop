@@ -814,6 +814,39 @@ async def _handle_trust_chain_status(arguments: dict[str, Any]) -> dict[str, Any
 
 
 # ---------------------------------------------------------------------------
+# Structured usage logging
+# ---------------------------------------------------------------------------
+
+
+def _log_tool_call(
+    tool: str,
+    input_size_bytes: int,
+    duration_ms: float,
+    success: bool,
+) -> None:
+    """Emit one structured JSON log line per tool invocation.
+
+    Format::
+
+        {"tool": "scan_agent", "input_size_bytes": 1024, "duration_ms": 12.3, "success": true}
+
+    Logged at INFO level so Grafana Loki / Datadog / Prometheus (via promtail / mtail)
+    can ingest without extra pipeline config.  ``duration_ms`` is rounded to one decimal
+    place to keep log volume predictable.
+    """
+    _log.info(
+        json.dumps(
+            {
+                "tool": tool,
+                "input_size_bytes": input_size_bytes,
+                "duration_ms": round(duration_ms, 1),
+                "success": success,
+            }
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
 # MCP import guard
 # ---------------------------------------------------------------------------
 
@@ -869,6 +902,8 @@ def build_server() -> Any:
     @server.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextContent]:
         args = arguments or {}
+        _t0 = time.monotonic()
+        _input_size = len(json.dumps(args, default=str).encode())
         handler = _HANDLERS.get(name)
         if handler is None:
             result: dict[str, Any] = {"error": f"Unknown tool: {name!r}"}
@@ -881,6 +916,7 @@ def build_server() -> Any:
                 _log.exception("Tool %r raised: %s", name, exc)
                 result = {"error": f"Tool execution failed: {type(exc).__name__}: {exc}"}
 
+        _log_tool_call(name, _input_size, (time.monotonic() - _t0) * 1000, "error" not in result)
         return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
     return server

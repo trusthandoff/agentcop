@@ -303,12 +303,10 @@ _FIXES: dict[str, str] = {
         "Use a template system with explicit escaping."
     ),
     "hardcoded_credentials": (
-        "Move secrets to environment variables. "
-        "Use os.environ.get() or a secrets manager."
+        "Move secrets to environment variables. Use os.environ.get() or a secrets manager."
     ),
     "dangerous_execution": (
-        "Never execute LLM-generated code directly. "
-        "Use a sandboxed executor with allowlists."
+        "Never execute LLM-generated code directly. Use a sandboxed executor with allowlists."
     ),
     "unvalidated_tool_result": (
         "Validate and sanitize tool results before passing to other tools or agents."
@@ -317,8 +315,7 @@ _FIXES: dict[str, str] = {
         "Add input validation at all entry points. Reject or escape unexpected characters."
     ),
     "excessive_agency": (
-        "Limit agent capabilities to the minimum required. "
-        "Use ToolPermissionLayer for RBAC."
+        "Limit agent capabilities to the minimum required. Use ToolPermissionLayer for RBAC."
     ),
 }
 
@@ -394,9 +391,7 @@ def _quick_scan(snippet: str) -> dict[str, Any]:
 
     for pattern, severity, description in _QUICK_PATTERNS:
         if re.search(pattern, snippet, re.IGNORECASE | re.MULTILINE):
-            issues.append(
-                {"pattern": pattern, "severity": severity, "description": description}
-            )
+            issues.append({"pattern": pattern, "severity": severity, "description": description})
 
     elapsed_ms = max(1, int((time.monotonic() - t0) * 1000))
     return {
@@ -501,9 +496,7 @@ def _tool_schemas() -> list[dict[str, Any]]:
                 "properties": {
                     "framework": {
                         "type": "string",
-                        "description": (
-                            "Framework to filter by. Use 'all' for all frameworks."
-                        ),
+                        "description": ("Framework to filter by. Use 'all' for all frameworks."),
                         "enum": ["langchain", "crewai", "autogen", "openclaw", "all"],
                         "default": "all",
                     },
@@ -536,9 +529,7 @@ def _tool_schemas() -> list[dict[str, Any]]:
                     },
                     "hours": {
                         "type": "integer",
-                        "description": (
-                            "Time window in hours to analyze. Maximum 168 (7 days)."
-                        ),
+                        "description": ("Time window in hours to analyze. Maximum 168 (7 days)."),
                         "default": 24,
                         "minimum": 1,
                         "maximum": 168,
@@ -601,11 +592,7 @@ async def _handle_scan_agent(arguments: dict[str, Any]) -> dict[str, Any]:
     if not code or not code.strip():
         return {"error": "code is required and must not be empty"}
     if len(code) > 50_000:
-        return {
-            "error": (
-                f"code exceeds maximum length of 50000 characters (got {len(code)})"
-            )
-        }
+        return {"error": (f"code exceeds maximum length of 50000 characters (got {len(code)})")}
     if scan_type not in ("agent", "skill", "moltbook"):
         return {"error": "scan_type must be 'agent', 'skill', or 'moltbook'"}
 
@@ -648,10 +635,7 @@ async def _handle_check_badge(arguments: dict[str, Any]) -> dict[str, Any]:
                 "expires_at": "",
                 "runtime_protected": False,
                 "chain_verified": False,
-                "note": (
-                    "agentcop[badge] not installed. "
-                    "Run: pip install agentcop[badge]"
-                ),
+                "note": ("agentcop[badge] not installed. Run: pip install agentcop[badge]"),
             }
 
         try:
@@ -813,10 +797,7 @@ async def _handle_trust_chain_status(arguments: dict[str, Any]) -> dict[str, Any
         try:
             compact = builder.export_chain(format="compact")
         except Exception:
-            compact = (
-                f"[chain:{chain_id[:8]}] "
-                f"[verified:{str(chain.verified).lower()}]"
-            )
+            compact = f"[chain:{chain_id[:8]}] [verified:{str(chain.verified).lower()}]"
         return {
             "chain_id": chain.chain_id,
             "verified": chain.verified,
@@ -843,8 +824,7 @@ def _require_mcp() -> None:
         import mcp  # noqa: F401
     except ImportError as exc:
         raise ImportError(
-            "agentcop[mcp] requires the 'mcp' package. "
-            "Install it with: pip install agentcop[mcp]"
+            "agentcop[mcp] requires the 'mcp' package. Install it with: pip install agentcop[mcp]"
         ) from exc
 
 
@@ -887,9 +867,7 @@ def build_server() -> Any:
         ]
 
     @server.call_tool()
-    async def call_tool(
-        name: str, arguments: dict[str, Any] | None
-    ) -> list[TextContent]:
+    async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextContent]:
         args = arguments or {}
         handler = _HANDLERS.get(name)
         if handler is None:
@@ -901,9 +879,7 @@ def build_server() -> Any:
                 result = {"error": f"Tool {name!r} timed out after 30 seconds"}
             except Exception as exc:
                 _log.exception("Tool %r raised: %s", name, exc)
-                result = {
-                    "error": f"Tool execution failed: {type(exc).__name__}: {exc}"
-                }
+                result = {"error": f"Tool execution failed: {type(exc).__name__}: {exc}"}
 
         return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 

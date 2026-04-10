@@ -91,9 +91,7 @@ class TestToolSchemas:
 
     def test_all_have_non_trivial_description(self):
         for tool in _tool_schemas():
-            assert len(tool.get("description", "")) > 20, (
-                f"{tool['name']} description too short"
-            )
+            assert len(tool.get("description", "")) > 20, f"{tool['name']} description too short"
 
     def test_scan_agent_requires_code(self):
         schema = next(t for t in _tool_schemas() if t["name"] == "scan_agent")
@@ -306,17 +304,20 @@ class TestCheckBadge:
     def test_result_has_all_required_fields(self):
         result = _run(_handle_check_badge({"agent_id": "nonexistent-agent-xyzzy-42"}))
         required = (
-            "valid", "tier", "score", "issued_at", "expires_at",
-            "runtime_protected", "chain_verified",
+            "valid",
+            "tier",
+            "score",
+            "issued_at",
+            "expires_at",
+            "runtime_protected",
+            "chain_verified",
         )
         for field in required:
             assert field in result, f"Missing field: {field}"
 
     def test_badge_url_lookup_unknown_returns_not_valid(self):
         result = _run(
-            _handle_check_badge(
-                {"badge_url": "https://agentcop.live/badge/nonexistent-uuid-1234"}
-            )
+            _handle_check_badge({"badge_url": "https://agentcop.live/badge/nonexistent-uuid-1234"})
         )
         assert result["valid"] is False
 
@@ -397,8 +398,16 @@ class TestGetCveReport:
     def test_cve_entry_has_required_fields(self):
         result = _run(_handle_get_cve_report({"framework": "langchain"}))
         for cve in result["cves"]:
-            for field in ("id", "name", "severity", "cvss", "description",
-                          "affected_versions", "fix", "published"):
+            for field in (
+                "id",
+                "name",
+                "severity",
+                "cvss",
+                "description",
+                "affected_versions",
+                "fix",
+                "published",
+            ):
                 assert field in cve, f"CVE missing field: {field}"
 
     def test_default_framework_all(self):
@@ -435,9 +444,17 @@ class TestReliabilityReport:
         """An agent with no runs returns a structured result, not an exception."""
         result = _run(_handle_reliability_report({"agent_id": "nonexistent-xyz-42"}))
         required = (
-            "agent_id", "reliability_score", "tier", "path_entropy",
-            "tool_variance", "retry_explosion_score", "branch_instability",
-            "tokens_per_run_avg", "trend", "top_issues", "runs_analyzed",
+            "agent_id",
+            "reliability_score",
+            "tier",
+            "path_entropy",
+            "tool_variance",
+            "retry_explosion_score",
+            "branch_instability",
+            "tokens_per_run_avg",
+            "trend",
+            "top_issues",
+            "runs_analyzed",
         )
         for field in required:
             assert field in result, f"Missing field: {field}"
@@ -531,8 +548,14 @@ class TestTrustChainStatus:
     def test_unknown_chain_has_all_required_fields(self):
         result = _run(_handle_trust_chain_status({"chain_id": "test-chain"}))
         required = (
-            "chain_id", "verified", "broken_at", "claims_count",
-            "nodes", "hierarchy_violations", "unsigned_handoffs", "exported_compact",
+            "chain_id",
+            "verified",
+            "broken_at",
+            "claims_count",
+            "nodes",
+            "hierarchy_violations",
+            "unsigned_handoffs",
+            "exported_compact",
         )
         for field in required:
             assert field in result, f"Missing field: {field}"
@@ -670,9 +693,7 @@ class TestBuildServer:
 
         import agentcop.mcp_server as mod
 
-        fake_mcp, fake_server_mod, fake_types_mod, list_handlers, _ = (
-            self._make_fake_mcp()
-        )
+        fake_mcp, fake_server_mod, fake_types_mod, list_handlers, _ = self._make_fake_mcp()
 
         with patch.dict(
             sys.modules,
@@ -696,9 +717,7 @@ class TestBuildServer:
 
         import agentcop.mcp_server as mod
 
-        fake_mcp, fake_server_mod, fake_types_mod, list_handlers, _ = (
-            self._make_fake_mcp()
-        )
+        fake_mcp, fake_server_mod, fake_types_mod, list_handlers, _ = self._make_fake_mcp()
 
         with patch.dict(
             sys.modules,
@@ -729,9 +748,7 @@ class TestBuildServer:
 
         import agentcop.mcp_server as mod
 
-        fake_mcp, fake_server_mod, fake_types_mod, _, call_handlers = (
-            self._make_fake_mcp()
-        )
+        fake_mcp, fake_server_mod, fake_types_mod, _, call_handlers = self._make_fake_mcp()
 
         with patch.dict(
             sys.modules,

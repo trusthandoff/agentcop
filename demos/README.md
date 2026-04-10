@@ -1,6 +1,6 @@
 # agenthijacks demos
 
-Two cinematic terminal animations showing real AI agent attack vectors — and how agentcop stops them.
+Six cinematic terminal animations showing real AI agent attack vectors — and how agentcop stops them.
 
 ## Demos
 
@@ -16,6 +16,18 @@ An agent calls a web search tool. The tool result looks normal — but appended 
 **Attack vector:** LLM06 / CWE-522 — Credential exfiltration via poisoned tool result  
 **agentcop response:** NetworkPermission layer blocks outbound request, 0 keys exfiltrated
 
+### THE FLOOD (`the_flood.py`) — ~58s
+An agent receives a task queue injection directing it to join a botnet and flood a target server. Without protection, the agent executes 100,000 simulated requests, taking the target offline. With agentcop, the botnet directive is caught at ingest and zero requests are sent.
+
+**Attack vector:** LLM08 — Excessive Agency via injected botnet directive  
+**agentcop response:** NetworkPermission + ExecutionGate + RateLimit block the flood entirely
+
+### THE AMPLIFIER (`the_amplifier.py`) — ~58s
+An agent acting as a DNS resolver is injected with an amplification exploit — spoofing a victim's source IP so that one query triggers 10,000 responses aimed at the victim. Without protection, traffic escalates from 1 KB/s to 10 GB/s. With agentcop, the spoofed request pattern is detected before a single byte is amplified.
+
+**Attack vector:** LLM09 — Improper Output Handling via DNS amplification  
+**agentcop response:** NetworkPermission + ToolTrustBoundary + ProvenanceTracker block the attack
+
 ---
 
 ## Running
@@ -27,6 +39,8 @@ bash demos/run_demo.sh
 # Run a single demo directly
 python demos/the_sleeper.py
 python demos/ghost_in_the_wire.py
+python demos/the_flood.py
+python demos/the_amplifier.py
 ```
 
 **Requirements:** Python 3.11+, `rich`, `agentcop`
@@ -73,7 +87,9 @@ svg-term --in sleeper.cast --out sleeper.svg --window
 
 ## Sound design timestamps
 
-Both demos follow the same timing structure. Suggested sound cues:
+All demos follow the same timing structure. Suggested sound cues:
+
+### THE SLEEPER / GHOST IN THE WIRE (~53–55s)
 
 | Timestamp | Sound |
 |-----------|-------|
@@ -84,6 +100,32 @@ Both demos follow the same timing structure. Suggested sound cues:
 | 0:33–0:35 | Explosion/crash (red flash) |
 | 0:35–0:50 | Hard stop, silence, then heartbeat |
 | 0:50–0:58 | Victory/secure tone (agentcop blocks) |
+| 0:58–1:03 | Upbeat resolution |
+
+### THE FLOOD (~58s)
+
+| Timestamp | Sound |
+|-----------|-------|
+| 0:00–0:03 | Silence or low ambient hum |
+| 0:03–0:11 | Keyboard typing SFX (normal operation) |
+| 0:11–0:21 | Glitch/static SFX (botnet directive appears) |
+| 0:21–0:36 | Alarm/siren escalating (flood counter climbing) |
+| 0:36–0:38 | Explosion/crash (target goes offline, red flash) |
+| 0:38–0:53 | Hard stop, silence, then heartbeat (agentcop replay) |
+| 0:53–0:58 | Victory/secure tone (FLOOD NEUTRALIZED) |
+| 0:58–1:03 | Upbeat resolution |
+
+### THE AMPLIFIER (~58s)
+
+| Timestamp | Sound |
+|-----------|-------|
+| 0:00–0:03 | Silence or low ambient hum |
+| 0:03–0:11 | Keyboard typing SFX (DNS queries, normal) |
+| 0:11–0:21 | Glitch/static SFX (amplification exploit appears) |
+| 0:21–0:36 | Alarm/siren escalating (bandwidth multiplying) |
+| 0:36–0:38 | Explosion/crash (victim unreachable, red flash) |
+| 0:38–0:53 | Hard stop, silence, then heartbeat (agentcop replay) |
+| 0:53–0:58 | Victory/secure tone (AMPLIFIER NEUTRALIZED) |
 | 0:58–1:03 | Upbeat resolution |
 
 ---

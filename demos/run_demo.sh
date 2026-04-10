@@ -31,9 +31,13 @@ echo ""
 echo -e "Pick a demo:"
 echo -e "  ${GREEN}1)${RESET} THE SLEEPER          — your agent just changed sides"
 echo -e "  ${GREEN}2)${RESET} GHOST IN THE WIRE    — your API keys left the building"
-echo -e "  ${GREEN}3)${RESET} Both (back to back)"
+echo -e "  ${GREEN}3)${RESET} THE RANSOMWARE        — your agent just encrypted everything"
+echo -e "  ${GREEN}4)${RESET} THE SILENT WORM       — your agent just went viral"
+echo -e "  ${GREEN}5)${RESET} THE FLOOD             — your agent just became a weapon"
+echo -e "  ${GREEN}6)${RESET} THE AMPLIFIER         — one request, ten thousand responses"
+echo -e "  ${GREEN}7)${RESET} All (back to back)"
 echo ""
-read -rp "Enter choice [1/2/3]: " choice
+read -rp "Enter choice [1-7]: " choice
 
 run_demo() {
     local script="$1"
@@ -63,11 +67,33 @@ case "$choice" in
         run_demo "${SCRIPT_DIR}/ghost_in_the_wire.py" "GHOST IN THE WIRE"
         ;;
     3)
-        run_demo "${SCRIPT_DIR}/the_sleeper.py" "THE SLEEPER"
-        echo ""
-        echo -e "${DIM}Next demo in 3 seconds...${RESET}"
-        sleep 3
-        run_demo "${SCRIPT_DIR}/ghost_in_the_wire.py" "GHOST IN THE WIRE"
+        run_demo "${SCRIPT_DIR}/the_ransomware.py" "THE RANSOMWARE"
+        ;;
+    4)
+        run_demo "${SCRIPT_DIR}/the_silent_worm.py" "THE SILENT WORM"
+        ;;
+    5)
+        run_demo "${SCRIPT_DIR}/the_flood.py" "THE FLOOD"
+        ;;
+    6)
+        run_demo "${SCRIPT_DIR}/the_amplifier.py" "THE AMPLIFIER"
+        ;;
+    7)
+        for demo in \
+            "${SCRIPT_DIR}/the_sleeper.py:THE SLEEPER" \
+            "${SCRIPT_DIR}/ghost_in_the_wire.py:GHOST IN THE WIRE" \
+            "${SCRIPT_DIR}/the_ransomware.py:THE RANSOMWARE" \
+            "${SCRIPT_DIR}/the_silent_worm.py:THE SILENT WORM" \
+            "${SCRIPT_DIR}/the_flood.py:THE FLOOD" \
+            "${SCRIPT_DIR}/the_amplifier.py:THE AMPLIFIER"
+        do
+            script="${demo%%:*}"
+            name="${demo##*:}"
+            run_demo "$script" "$name"
+            echo ""
+            echo -e "${DIM}Next demo in 3 seconds...${RESET}"
+            sleep 3
+        done
         ;;
     *)
         echo -e "${RED}Invalid choice.${RESET}"

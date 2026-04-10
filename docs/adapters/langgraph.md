@@ -514,3 +514,66 @@ def my_node(state):
 ```
 
 See [docs/guides/reliability.md](../guides/reliability.md) for the full guide.
+
+---
+
+## TrustChain Integration
+
+Attach a cryptographic trust chain to every node execution. All four params
+default to `None` — no changes required to existing code.
+
+### Constructor params
+
+```python
+LangGraphSentinelAdapter(
+    thread_id="run-abc",
+    trust=None,        # TrustChainBuilder — SHA-256-linked execution chain
+    attestor=None,     # NodeAttestor      — Ed25519 signatures per node
+    hierarchy=None,    # AgentHierarchy    — supervisor/worker delegation rules
+    trust_interop=None,# TrustInterop      — portable cross-runtime claim export
+)
+```
+
+### What gets recorded
+
+`record_trust_node()` is called inside `_from_task_result()` for every
+successful `task_result` event (i.e. every completed graph node). The node's
+name becomes `agent_id`; `tool_calls` is set to `[node_name]`.
+
+### Example
+
+```python
+from agentcop.adapters.langgraph import LangGraphSentinelAdapter
+from agentcop.trust import TrustChainBuilder, NodeAttestor, AgentHierarchy
+from agentcop import Sentinel
+
+private_pem, public_pem = NodeAttestor.generate_key_pair()
+
+hierarchy = AgentHierarchy()
+hierarchy.define(
+    supervisor="orchestrator",
+    workers=["planner", "executor"],
+    can_delegate=True,
+    max_depth=3,
+    final_decision_authority="orchestrator",
+)
+
+adapter = LangGraphSentinelAdapter(
+    thread_id="run-abc",
+    trust=TrustChainBuilder(agent_id="my-graph"),
+    attestor=NodeAttestor(private_key_pem=private_pem),
+    hierarchy=hierarchy,
+)
+
+sentinel = Sentinel()
+sentinel.ingest(adapter.iter_events(
+    graph.stream(input, config, stream_mode="debug")
+))
+
+# After the run — inspect the trust chain
+result = adapter._trust.verify_chain()
+print(result.verified)    # True
+print(result.broken_at)   # None (no tampering)
+```
+
+See [docs/guides/trust-chain.md](../guides/trust-chain.md) for the full guide.

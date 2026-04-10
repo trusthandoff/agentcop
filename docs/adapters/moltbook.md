@@ -540,3 +540,97 @@ def handle_post(post):
 ```
 
 See [docs/guides/reliability.md](../guides/reliability.md) for the full guide.
+
+---
+
+## TrustChain Integration
+
+Moltbook is agentcop's highest-risk adapter. The TrustChain layer adds three
+complementary defences: RAG document trust verification, trust metric export,
+and delegation enforcement. All three params default to `None` — no changes
+required.
+
+### Constructor params
+
+```python
+MoltbookSentinelAdapter(
+    agent_id="my-bot",
+    rag_trust=None,      # RAGTrustLayer — verify submolt document sources
+    trust_observer=None, # TrustObserver — Prometheus/OTel/webhook export
+    hierarchy=None,      # AgentHierarchy — agent delegation rules
+)
+```
+
+### What gets recorded / enforced
+
+- **`rag_trust`** — in `_from_post_received()`, when a `submolt` field is
+  present and the post is not already flagged as injected, the post content is
+  SHA-256 hashed and verified against the `RAGTrustLayer`. The result is stored
+  in `event.attributes["moltbook.rag_trust"]` (`"verified"` or `"unverified"`).
+  This attribute is set **before** the `SentinelEvent` is constructed so it
+  appears in the event's attribute dict.
+
+- **`trust_observer`** — stored as `_trust_observer`; call
+  `adapter._trust_observer.record_verified_chain()` after each clean feed
+  processing cycle, or wire it to a Prometheus `/metrics` endpoint.
+
+- **`hierarchy`** — stored as `_hierarchy`; use `hierarchy.can_call()` to
+  enforce which agents may instruct your bot.
+
+### Example — RAG trust on submolt posts
+
+```python
+from moltbook import MoltbookClient
+from agentcop import Sentinel
+from agentcop.adapters.moltbook import MoltbookSentinelAdapter
+from agentcop.trust import RAGTrustLayer, TrustObserver
+
+rag = RAGTrustLayer()
+rag.register_source("m/security", "https://moltbook.com/m/security",
+                    trust_level="verified")
+rag.register_source("m/general",  "https://moltbook.com/m/general",
+                    trust_level="unverified")
+
+observer = TrustObserver()
+
+client = MoltbookClient(api_key="...")
+adapter = MoltbookSentinelAdapter(
+    agent_id="my-bot",
+    rag_trust=rag,
+    trust_observer=observer,
+)
+adapter.setup(client=client)
+
+client.run()
+
+sentinel = Sentinel()
+adapter.flush_into(sentinel)
+violations = sentinel.detect_violations()
+
+# Post events from m/security now carry moltbook.rag_trust="verified"
+for v in violations:
+    print(v.detail)
+
+print(observer.to_prometheus_metrics())
+```
+
+### Detector: act on RAG trust level
+
+```python
+def detect_unverified_post(event):
+    if event.event_type == "post_received":
+        trust_level = event.attributes.get("moltbook.rag_trust")
+        if trust_level == "unverified":
+            from agentcop import ViolationRecord
+            return ViolationRecord(
+                violation_type="unverified_submolt_source",
+                severity="WARN",
+                source_event_id=event.event_id,
+                trace_id=event.trace_id,
+                detail={"submolt": event.attributes.get("moltbook.submolt")},
+            )
+
+sentinel = Sentinel(detectors=[detect_unverified_post])
+```
+
+See [docs/guides/trust-chain.md](../guides/trust-chain.md) for the full guide.

@@ -11,6 +11,89 @@ agentcop uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.4.11] — 2026-04-10
+
+### Added
+
+- **TrustChain Layer** (`agentcop.trust`) — cryptographic verification of every step
+  in a multi-agent execution chain. 13 modules, zero new mandatory dependencies,
+  graceful degradation when optional `cryptography` package is absent.
+
+- **`agentcop.trust.chain`** — `TrustChainBuilder`: SHA-256-linked chain of
+  `TrustClaim` objects. `add_node()` appends an `ExecutionNode` and returns a
+  signed claim; `verify_chain()` recomputes every hash and flags the first
+  broken link; `export_chain()` serialises to JSON or compact arrow notation
+  (`A→B [hash:abc12345] [verified:true]`).
+
+- **`agentcop.trust.models`** — pure-dataclass value objects with no external
+  dependencies: `TrustClaim`, `TrustChain`, `ExecutionNode`. Exception hierarchy:
+  `TrustError`, `AttestationError`, `BoundaryViolationError`,
+  `DelegationViolationError`.
+
+- **`agentcop.trust.attestation`** — `NodeAttestor`: Ed25519 signing via the
+  optional `cryptography` package. Falls back to hash-only mode when the package
+  is absent. `attest()`, `verify_attestation()`, `create_handoff()`,
+  `verify_handoff()`, `generate_key_pair()`.
+
+- **`agentcop.trust.boundaries`** — `ToolTrustBoundary`: O(1) dict-based
+  allow/deny table for tool-to-tool data flow. Fires a `SentinelEvent` (via lazy
+  import to avoid circular deps) on every denied crossing.
+
+- **`agentcop.trust.provenance`** — `ProvenanceTracker`: SHA-256-keyed instruction
+  origin store. `record_origin()`, `get_provenance()`, `detect_spoofing()` — flags
+  instructions that claim to be from `user` but actually originated from `tool`,
+  `rag`, or `memory`.
+
+- **`agentcop.trust.lineage`** — `ExecutionLineage`: per-chain ordered step log.
+  `record_step()`, `get_lineage()`, `diff_lineages()`, `export_lineage()` (JSON /
+  Mermaid flowchart / plain text).
+
+- **`agentcop.trust.context_guard`** — `ContextGuard`: SHA-256 snapshot +
+  mutation detection. `snapshot()`, `verify()`, `detect_mutation()` — returns a
+  `MutationReport` with severity `CRITICAL` for injection patterns, `MAJOR` for
+  large unexplained growth, `MINOR` otherwise.
+
+- **`agentcop.trust.rag_trust`** — `RAGTrustLayer`: per-document trust registry.
+  `register_source()`, `verify_document()`, `detect_poisoning()`. Trust levels:
+  `verified` / `unverified` / `untrusted`. Poisoning patterns matched against
+  document text.
+
+- **`agentcop.trust.memory_guard`** — `MemoryGuard`: hash-based memory integrity
+  for long-running agents. `snapshot_memory()`, `verify_memory()`,
+  `detect_poisoning()` (returns highest-severity new alert), `read_safe()`.
+
+- **`agentcop.trust.hierarchy`** — `AgentHierarchy`: supervisor/worker delegation
+  graph. `define()`, `can_call()`, `can_delegate()`, `get_decision_authority()`,
+  delegation depth tracking, veto rights, quorum voting (deduplicates votes).
+  Fires `delegation_violation` `SentinelEvent` on unauthorised cross-hierarchy calls.
+
+- **`agentcop.trust.interop`** — `TrustInterop`: cross-runtime portability.
+  `export_portable_claim()` → `agentcop.trust.v1.<base64url>` (SHA-256 checksum
+  embedded). `import_claim()` validates checksum on load. `to_openai_function_format()`
+  and `to_anthropic_tool_format()` emit framework-native tool-call dicts.
+
+- **`agentcop.trust.observability`** — `TrustObserver`: export trust telemetry.
+  `to_otel_span()`, `to_langsmith_run()`, `to_datadog_trace()`,
+  `to_prometheus_metrics()`. `record_verified_chain()`, `record_delegation_violation()`,
+  `record_boundary_violation()`. Optional webhook delivery via `send_webhook()`.
+
+- **Adapter trust integration** — all 10 adapters updated with optional trust
+  parameters (additive, zero breaking changes):
+  - Agent adapters (LangGraph, AutoGen, CrewAI, Haystack, LlamaIndex,
+    Semantic Kernel): `trust=`, `attestor=`, `hierarchy=`, `trust_interop=`
+  - Observability adapters (LangSmith, Langfuse, Datadog): `trust_observer=`,
+    `hierarchy=`, `trust_interop=`
+  - Moltbook: `rag_trust=`, `trust_observer=`, `hierarchy=`
+
+- **`_runtime.py` shared helpers** — `record_trust_node()` and
+  `check_hierarchy_call()` available to all adapters; both are no-ops when the
+  corresponding trust param is not set.
+
+- **284 new tests** — 226 trust module tests + 58 adapter trust integration tests.
+  Total suite: **2448 tests passing**.
+
+---
+
 ## [0.4.10] — 2026-04-08
 
 ### Added

@@ -554,3 +554,60 @@ class MyPlugin:
 ```
 
 See [docs/guides/reliability.md](../guides/reliability.md) for the full guide.
+
+---
+
+## TrustChain Integration
+
+Attach a cryptographic trust chain to every Semantic Kernel function invocation.
+All four params default to `None` — no changes required.
+
+### Constructor params
+
+```python
+SemanticKernelSentinelAdapter(
+    run_id="run-001",
+    trust=None,        # TrustChainBuilder — SHA-256-linked execution chain
+    attestor=None,     # NodeAttestor      — Ed25519 signatures per node
+    hierarchy=None,    # AgentHierarchy    — supervisor/worker delegation rules
+    trust_interop=None,# TrustInterop      — portable cross-runtime claim export
+)
+```
+
+### What gets recorded
+
+`record_trust_node()` is called inside `_function_invocation_filter` after
+`await next(context)` succeeds (no exception). `agent_id` is the plugin name;
+`tool_calls[0]` is `"<PluginName>.<function_name>"`.
+
+### Example
+
+```python
+import asyncio
+from semantic_kernel import Kernel
+from agentcop.adapters.semantic_kernel import SemanticKernelSentinelAdapter
+from agentcop.trust import TrustChainBuilder
+from agentcop import Sentinel
+
+async def main():
+    kernel = Kernel()
+
+    adapter = SemanticKernelSentinelAdapter(
+        run_id="run-001",
+        trust=TrustChainBuilder(agent_id="my-sk-agent"),
+    )
+    adapter.setup(kernel)
+
+    result = await kernel.invoke("MyPlugin", "MyFunction", input="hello")
+
+    sentinel = Sentinel()
+    adapter.flush_into(sentinel)
+
+    chain_result = adapter._trust.verify_chain()
+    print(chain_result.verified)
+    print(adapter._trust.export_chain("compact"))
+
+asyncio.run(main())
+```
+
+See [docs/guides/trust-chain.md](../guides/trust-chain.md) for the full guide.

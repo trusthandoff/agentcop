@@ -535,3 +535,62 @@ def my_agent(input: str) -> str:
 ```
 
 See [docs/guides/reliability.md](../guides/reliability.md) for the full guide.
+
+---
+
+## TrustChain Integration
+
+Wire a `TrustObserver` into the LangSmith adapter to export trust metrics
+alongside run data. All three params default to `None` — no changes required.
+
+### Constructor params
+
+```python
+LangSmithSentinelAdapter(
+    run_id="run-001",
+    trust_observer=None, # TrustObserver — OTel/LangSmith/Datadog/Prometheus export
+    hierarchy=None,      # AgentHierarchy — delegation rules (stored for manual use)
+    trust_interop=None,  # TrustInterop  — portable claim export
+)
+```
+
+### What gets recorded
+
+`trust_observer.record_verified_chain()` is called inside
+`_intercepted_update()` after a successful run completes (i.e. `update_run` is
+called without an `error` argument). This increments the
+`agentcop_trust_verified_chains_total` Prometheus counter and fires any
+configured webhooks.
+
+### Example
+
+```python
+from langsmith import Client
+from agentcop.adapters.langsmith import LangSmithSentinelAdapter
+from agentcop.trust import TrustObserver
+from agentcop import Sentinel
+
+observer = TrustObserver(webhook_url="https://hooks.example.com/trust")
+
+client = Client()
+adapter = LangSmithSentinelAdapter(
+    run_id="run-001",
+    trust_observer=observer,
+)
+adapter.setup(client)
+
+# ... run your LangSmith-traced code ...
+
+sentinel = Sentinel()
+adapter.flush_into(sentinel)
+
+print(observer.to_prometheus_metrics())
+# agentcop_trust_verified_chains_total 3
+# agentcop_trust_delegation_violations_total 0
+# agentcop_trust_boundary_violations_total 0
+
+# Export chain to LangSmith run format
+ls_run = observer.to_langsmith_run(chain)
+```
+
+See [docs/guides/trust-chain.md](../guides/trust-chain.md) for the full guide.

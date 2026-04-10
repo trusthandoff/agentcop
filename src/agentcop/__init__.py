@@ -40,7 +40,7 @@ try:
 except ImportError:  # pragma: no cover
     _reliability_available = False
 
-__version__ = "0.4.10"
+__version__ = "0.4.11"
 
 __all__ = [
     # Core schema

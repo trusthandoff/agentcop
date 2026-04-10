@@ -467,3 +467,59 @@ crew.kickoff()
 ```
 
 See [docs/guides/reliability.md](../guides/reliability.md) for the full guide.
+
+---
+
+## TrustChain Integration
+
+Attach a cryptographic trust chain to CrewAI agent completions and tool
+executions. All four params default to `None` — no changes required.
+
+### Constructor params
+
+```python
+CrewAISentinelAdapter(
+    run_id="run-001",
+    trust=None,        # TrustChainBuilder — SHA-256-linked execution chain
+    attestor=None,     # NodeAttestor      — Ed25519 signatures per node
+    hierarchy=None,    # AgentHierarchy    — supervisor/worker delegation rules
+    trust_interop=None,# TrustInterop      — portable cross-runtime claim export
+)
+```
+
+### What gets recorded
+
+`record_trust_node()` is called in two places:
+
+- **`_on_agent_completed`** bus handler — records a node for each completed
+  agent task (`agent_id=agent_role`, `tool_calls=[agent_role]`).
+- **`_on_tool_finished`** bus handler — records a node for each finished tool
+  call (`agent_id=agent_role`, `tool_calls=[tool_name]`).
+
+### Example
+
+```python
+from agentcop.adapters.crewai import CrewAISentinelAdapter
+from agentcop.trust import TrustChainBuilder, NodeAttestor
+from agentcop import Sentinel
+
+private_pem, public_pem = NodeAttestor.generate_key_pair()
+
+adapter = CrewAISentinelAdapter(
+    run_id="run-001",
+    trust=TrustChainBuilder(agent_id="research-crew"),
+    attestor=NodeAttestor(private_key_pem=private_pem),
+)
+adapter.setup()
+
+crew.kickoff()
+
+sentinel = Sentinel()
+adapter.flush_into(sentinel)
+
+result = adapter._trust.verify_chain()
+print(result.verified)
+print(adapter._trust.export_chain("compact"))
+```
+
+See [docs/guides/trust-chain.md](../guides/trust-chain.md) for the full guide.

@@ -519,3 +519,61 @@ def my_agent_function(input: str) -> str:
 ```
 
 See [docs/guides/reliability.md](../guides/reliability.md) for the full guide.
+
+---
+
+## TrustChain Integration
+
+Wire a `TrustObserver` into the Datadog adapter to export trust metrics
+alongside APM trace data. All three params default to `None` — no changes
+required.
+
+### Constructor params
+
+```python
+DatadogSentinelAdapter(
+    run_id="run-001",
+    trust_observer=None, # TrustObserver — OTel/LangSmith/Datadog/Prometheus export
+    hierarchy=None,      # AgentHierarchy — delegation rules (stored for manual use)
+    trust_interop=None,  # TrustInterop  — portable claim export
+)
+```
+
+### What gets recorded
+
+`trust_observer.record_verified_chain()` is called inside `_intercepted_write()`
+when a span's type does not end with `_error`. This increments the
+`agentcop_trust_verified_chains_total` Prometheus counter and fires any
+configured webhooks.
+
+### Example
+
+```python
+import ddtrace
+from agentcop.adapters.datadog import DatadogSentinelAdapter
+from agentcop.trust import TrustObserver
+from agentcop import Sentinel
+
+observer = TrustObserver()
+
+adapter = DatadogSentinelAdapter(
+    run_id="run-001",
+    trust_observer=observer,
+)
+adapter.setup(ddtrace.tracer)
+
+# ... run your ddtrace-instrumented code ...
+
+sentinel = Sentinel()
+adapter.flush_into(sentinel)
+
+print(observer.to_prometheus_metrics())
+# agentcop_trust_verified_chains_total 12
+# agentcop_trust_delegation_violations_total 0
+# agentcop_trust_boundary_violations_total 0
+
+# Export to Datadog trace format
+chain_dict = observer.to_datadog_trace(chain)
+```
+
+See [docs/guides/trust-chain.md](../guides/trust-chain.md) for the full guide.

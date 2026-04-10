@@ -525,3 +525,56 @@ def reliable_query(query_engine, query: str) -> str:
 ```
 
 See [docs/guides/reliability.md](../guides/reliability.md) for the full guide.
+
+---
+
+## TrustChain Integration
+
+Attach a cryptographic trust chain to every LlamaIndex agent step. All four
+params default to `None` — no changes required.
+
+### Constructor params
+
+```python
+LlamaIndexSentinelAdapter(
+    run_id="run-001",
+    trust=None,        # TrustChainBuilder — SHA-256-linked execution chain
+    attestor=None,     # NodeAttestor      — Ed25519 signatures per node
+    hierarchy=None,    # AgentHierarchy    — supervisor/worker delegation rules
+    trust_interop=None,# TrustInterop      — portable cross-runtime claim export
+)
+```
+
+### What gets recorded
+
+`record_trust_node()` is called inside the `AgentRunStepEndEvent` handler.
+The LlamaIndex task ID becomes both `node_id` and `agent_id`; `tool_calls` is
+set to `["agent_step"]`.
+
+### Example
+
+```python
+from agentcop.adapters.llamaindex import LlamaIndexSentinelAdapter
+from agentcop.trust import TrustChainBuilder, NodeAttestor
+from agentcop import Sentinel
+
+private_pem, public_pem = NodeAttestor.generate_key_pair()
+
+adapter = LlamaIndexSentinelAdapter(
+    run_id="run-001",
+    trust=TrustChainBuilder(agent_id="my-lli-agent"),
+    attestor=NodeAttestor(private_key_pem=private_pem),
+)
+adapter.setup()
+
+response = query_engine.query("What is RAG?")
+
+sentinel = Sentinel()
+adapter.flush_into(sentinel)
+
+result = adapter._trust.verify_chain()
+print(result.verified)
+print(adapter._trust.export_chain("json"))
+```
+
+See [docs/guides/trust-chain.md](../guides/trust-chain.md) for the full guide.

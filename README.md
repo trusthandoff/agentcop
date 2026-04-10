@@ -38,6 +38,7 @@ OTel-aligned schema. Pluggable detectors. Adapter bridge to your stack. Zero req
 - OpenClaw integration — `/security` skill commands + `agentcop-monitor` hook for real-time LLM01/LLM02 detection in Telegram, WhatsApp, Discord, and more
 - **Runtime Security Layer** — four composable enforcement layers: `ExecutionGate` (policy-based tool execution with SQLite audit log), `ToolPermissionLayer` (declarative capability scoping, deny by default), `AgentSandbox` (runtime isolation with active syscall interception), `ApprovalBoundary` (human-in-the-loop for high-risk actions). `AgentCop.protect()` chains all four in one line.
 - **Reliability Layer** — five-metric reliability scoring (path entropy, tool variance, retry explosion, branch instability, token budget), SQLite-backed run history, predictive alerts via OLS regression, K-means++ cross-agent clustering, Prometheus export, and a combined badge format: `✅ SECURED 94/100 | 🟢 STABLE 87/100`
+- **TrustChain Layer** — 13-module cryptographic trust chain: SHA-256-linked execution nodes, Ed25519 attestation, tool boundary enforcement, provenance tracking, context/memory poisoning detection, agent hierarchy, cross-runtime portability, and OTel/LangSmith/Datadog export. All 10 adapters updated with optional trust params. 🔐 **CHAIN VERIFIED**
 - Optional OTel export via `agentcop[otel]`
 
 ```
@@ -740,6 +741,107 @@ print(exporter.export(["agent-a", "agent-b"]))
 # agentcop_tool_variance{agent_id="agent-a"} 0.08
 # ... (8 gauges per agent)
 ```
+
+---
+
+## TrustChain Layer
+
+`agentcop` v0.4.11 ships a cryptographic trust chain that verifies every step in a multi-agent execution. Each node — tool call, agent handoff, RAG lookup, memory read — is hashed and linked to the previous one. A broken link means something changed without authorisation. Thirteen modules, zero new mandatory dependencies, Ed25519 signing when the `cryptography` package is present and hash-only mode otherwise.
+
+🔐 **CHAIN VERIFIED**
+
+### Quick example
+
+```python
+from agentcop.trust import TrustChainBuilder, ExecutionNode
+
+with TrustChainBuilder(agent_id="orchestrator") as chain:
+    node = ExecutionNode(
+        node_id="step-1",
+        agent_id="orchestrator",
+        tool_calls=["web_search"],
+        context_hash="abc123",
+        output_hash="def456",
+        duration_ms=320,
+    )
+    claim = chain.add_node(node)
+
+result = chain.verify_chain()
+print(result.verified)   # True
+print(chain.export_chain("compact"))
+# orchestrator→step-1 [hash:a1b2c3d4] [verified:true]
+```
+
+### Multi-agent hierarchy
+
+```python
+from agentcop.trust import AgentHierarchy
+
+hierarchy = AgentHierarchy(sentinel=sentinel)
+hierarchy.define(
+    supervisor="orchestrator",
+    workers=["researcher", "writer"],
+    can_delegate=True,
+    max_depth=3,
+    final_decision_authority="orchestrator",
+)
+
+# Any adapter enforces hierarchy automatically
+from agentcop.adapters.langgraph import LangGraphSentinelAdapter
+
+adapter = LangGraphSentinelAdapter(
+    thread_id="run-abc",
+    hierarchy=hierarchy,   # raises PermissionError on unauthorised handoffs
+)
+```
+
+### Modules
+
+| Module | What it does |
+|---|---|
+| `agentcop.trust.chain` | SHA-256-linked `TrustChainBuilder` — add nodes, verify the chain, export |
+| `agentcop.trust.models` | Pure-dataclass value objects: `TrustClaim`, `TrustChain`, `ExecutionNode` |
+| `agentcop.trust.attestation` | Ed25519 signing via `cryptography`; hash-only fallback when absent |
+| `agentcop.trust.boundaries` | `ToolTrustBoundary` — declare and enforce tool-to-tool data-flow rules |
+| `agentcop.trust.provenance` | `ProvenanceTracker` — record instruction origins, detect spoofed `user` claims |
+| `agentcop.trust.lineage` | `ExecutionLineage` — ordered step log, diff, JSON/Mermaid/text export |
+| `agentcop.trust.context_guard` | `ContextGuard` — snapshot context hashes, detect injection-pattern mutation |
+| `agentcop.trust.rag_trust` | `RAGTrustLayer` — per-document trust registry, poisoning detection |
+| `agentcop.trust.memory_guard` | `MemoryGuard` — hash-based memory integrity, poisoning pattern matching |
+| `agentcop.trust.hierarchy` | `AgentHierarchy` — supervisor/worker delegation graph, veto rights, quorum |
+| `agentcop.trust.interop` | `TrustInterop` — portable `agentcop.trust.v1.*` claims, OpenAI/Anthropic formats |
+| `agentcop.trust.observability` | `TrustObserver` — OTel spans, LangSmith runs, Datadog traces, Prometheus |
+| `agentcop.trust` (package) | Re-exports all 28 public symbols; `RAGPoisoningAlert` and `MemoryPoisoningAlert` aliases |
+
+### Adapter trust params (v0.4.11+)
+
+All 10 adapters now accept optional trust parameters:
+
+```python
+# Agent adapters (LangGraph, AutoGen, CrewAI, Haystack, LlamaIndex, Semantic Kernel)
+adapter = LangGraphSentinelAdapter(
+    thread_id="run-abc",
+    trust=TrustChainBuilder(agent_id="my-graph"),  # records every completed node
+    attestor=NodeAttestor(private_key_pem=key),     # signs each claim (optional)
+    hierarchy=AgentHierarchy(...),                  # enforces delegation rules
+    trust_interop=TrustInterop(),                   # exports portable claims
+)
+
+# Observability adapters (LangSmith, Langfuse, Datadog)
+adapter = LangSmithSentinelAdapter(
+    trust_observer=TrustObserver(),  # calls record_verified_chain() on run completion
+    hierarchy=AgentHierarchy(...),
+)
+
+# Moltbook
+adapter = MoltbookSentinelAdapter(
+    rag_trust=RAGTrustLayer(),       # verifies each received post's submolt source
+    trust_observer=TrustObserver(),
+    hierarchy=AgentHierarchy(...),
+)
+```
+
+All parameters default to `None` — existing code requires no changes. See [docs/guides/trust-chain.md](docs/guides/trust-chain.md) for the complete guide.
 
 ---
 

@@ -557,3 +557,64 @@ wrapped = wrap_for_reliability(adapter, agent_id="autogen-agent", store=store)
 ```
 
 See [docs/guides/reliability.md](../guides/reliability.md) for the full guide.
+
+---
+
+## TrustChain Integration
+
+Attach a cryptographic trust chain to function calls and enforce delegation
+rules across agents. All four params default to `None` — no changes required.
+
+### Constructor params
+
+```python
+AutoGenSentinelAdapter(
+    run_id="run-001",
+    trust=None,        # TrustChainBuilder — SHA-256-linked execution chain
+    attestor=None,     # NodeAttestor      — Ed25519 signatures per node
+    hierarchy=None,    # AgentHierarchy    — supervisor/worker delegation rules
+    trust_interop=None,# TrustInterop      — portable cross-runtime claim export
+)
+```
+
+### What gets recorded / enforced
+
+- **`record_trust_node()`** — called inside `_from_function_call_completed()`
+  for every successful function call. The sender name is used as `agent_id`;
+  the function name is `tool_calls[0]`.
+- **`check_hierarchy_call()`** — called inside `_from_agent_reply_completed()`
+  when a `recipient` field is present. Raises `PermissionError` if the caller →
+  recipient relationship is not authorised by the hierarchy.
+
+### Example
+
+```python
+from agentcop.adapters.autogen import AutoGenSentinelAdapter
+from agentcop.trust import TrustChainBuilder, AgentHierarchy
+from agentcop import Sentinel
+
+hierarchy = AgentHierarchy()
+hierarchy.define(
+    supervisor="user_proxy",
+    workers=["assistant"],
+    can_delegate=True,
+    max_depth=2,
+    final_decision_authority="user_proxy",
+)
+
+adapter = AutoGenSentinelAdapter(
+    run_id="run-001",
+    trust=TrustChainBuilder(agent_id="autogen-run"),
+    hierarchy=hierarchy,
+)
+
+chat_result = user_proxy.initiate_chat(assistant, message="Summarise the report.")
+
+sentinel = Sentinel()
+sentinel.ingest(adapter.iter_messages(chat_result.chat_history))
+
+result = adapter._trust.verify_chain()
+print(result.verified)
+```
+
+See [docs/guides/trust-chain.md](../guides/trust-chain.md) for the full guide.

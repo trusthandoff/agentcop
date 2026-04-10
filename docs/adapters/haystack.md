@@ -559,3 +559,54 @@ class ReliableRetriever:
 ```
 
 See [docs/guides/reliability.md](../guides/reliability.md) for the full guide.
+
+---
+
+## TrustChain Integration
+
+Attach a cryptographic trust chain to every Haystack component execution. All
+four params default to `None` — no changes required.
+
+### Constructor params
+
+```python
+HaystackSentinelAdapter(
+    run_id="run-001",
+    trust=None,        # TrustChainBuilder — SHA-256-linked execution chain
+    attestor=None,     # NodeAttestor      — Ed25519 signatures per node
+    hierarchy=None,    # AgentHierarchy    — supervisor/worker delegation rules
+    trust_interop=None,# TrustInterop      — portable cross-runtime claim export
+)
+```
+
+### What gets recorded
+
+`record_trust_node()` is called inside `_WrappingTracer.trace()` when a
+component exits without error. The component name becomes `agent_id` and
+`tool_calls[0]`.
+
+### Example
+
+```python
+from agentcop.adapters.haystack import HaystackSentinelAdapter
+from agentcop.trust import TrustChainBuilder
+from agentcop import Sentinel
+
+adapter = HaystackSentinelAdapter(
+    run_id="run-001",
+    trust=TrustChainBuilder(agent_id="my-pipeline"),
+)
+adapter.setup(pipeline)
+
+result = pipeline.run({"query": "What is RAG?"})
+
+sentinel = Sentinel()
+adapter.flush_into(sentinel)
+
+chain_result = adapter._trust.verify_chain()
+print(chain_result.verified)
+for node in adapter._trust.get_lineage():
+    print(node.node_id, node.agent_id, node.tool_calls)
+```
+
+See [docs/guides/trust-chain.md](../guides/trust-chain.md) for the full guide.

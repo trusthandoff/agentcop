@@ -48,7 +48,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from agentcop.adapters._runtime import check_tool_call
+from agentcop.adapters._runtime import check_tool_call, record_trust_node
 from agentcop.event import SentinelEvent
 
 
@@ -111,6 +111,10 @@ class CrewAISentinelAdapter:
         sandbox=None,
         approvals=None,
         identity=None,
+        trust=None,
+        attestor=None,
+        hierarchy=None,
+        trust_interop=None,
     ) -> None:
         _require_crewai()
         self._run_id = run_id
@@ -119,6 +123,10 @@ class CrewAISentinelAdapter:
         self._sandbox = sandbox
         self._approvals = approvals
         self._identity = identity
+        self._trust = trust
+        self._attestor = attestor
+        self._hierarchy = hierarchy
+        self._trust_interop = trust_interop
         self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
 
@@ -209,12 +217,14 @@ class CrewAISentinelAdapter:
         @bus.on(AgentExecutionCompletedEvent)
         def _on_agent_completed(source, event):
             agent = getattr(event, "agent", None) or source
+            agent_role = getattr(agent, "role", str(agent))
+            record_trust_node(self, agent_id=agent_role, tool_calls=[agent_role])
             self._buffer_event(
                 self.to_sentinel_event(
                     {
                         "type": "agent_execution_completed",
                         "timestamp": _ts(event),
-                        "agent_role": getattr(agent, "role", str(agent)),
+                        "agent_role": agent_role,
                         "output": str(getattr(event, "output", "") or "")[:500],
                     }
                 )
@@ -304,13 +314,16 @@ class CrewAISentinelAdapter:
         @bus.on(ToolUsageFinishedEvent)
         def _on_tool_finished(source, event):
             tool = getattr(event, "tool", None)
+            tool_name = getattr(tool, "name", str(tool)) if tool else "unknown"
+            agent_role = _name(source)
+            record_trust_node(self, agent_id=agent_role, tool_calls=[tool_name])
             self._buffer_event(
                 self.to_sentinel_event(
                     {
                         "type": "tool_usage_finished",
                         "timestamp": _ts(event),
-                        "tool_name": getattr(tool, "name", str(tool)) if tool else "unknown",
-                        "agent_role": _name(source),
+                        "tool_name": tool_name,
+                        "agent_role": agent_role,
                         "from_cache": bool(getattr(event, "from_cache", False)),
                     }
                 )

@@ -1219,3 +1219,69 @@ class TestRuntimeSecuritySemanticKernel:
             {"type": "function_invoking", "plugin_name": "P", "function_name": "F"}
         )
         assert event.event_type == "function_invoking"
+
+
+# ---------------------------------------------------------------------------
+# Trust integration
+# ---------------------------------------------------------------------------
+
+
+def _make_adapter_trust(**kwargs):
+    with patch("agentcop.adapters.semantic_kernel._require_semantic_kernel"):
+        from agentcop.adapters.semantic_kernel import SemanticKernelSentinelAdapter
+
+        return SemanticKernelSentinelAdapter(**kwargs)
+
+
+class TestTrustIntegration:
+    def test_accepts_trust_param(self):
+        trust = MagicMock()
+        a = _make_adapter_trust(trust=trust)
+        assert a._trust is trust
+
+    def test_accepts_attestor_param(self):
+        attestor = MagicMock()
+        a = _make_adapter_trust(attestor=attestor)
+        assert a._attestor is attestor
+
+    def test_accepts_hierarchy_param(self):
+        hierarchy = MagicMock()
+        a = _make_adapter_trust(hierarchy=hierarchy)
+        assert a._hierarchy is hierarchy
+
+    def test_no_trust_defaults_to_none(self):
+        a = _make_adapter_trust()
+        assert a._trust is None
+
+    def test_function_invoked_calls_add_node(self):
+        import asyncio
+
+        trust = MagicMock()
+        a = _make_adapter_trust(trust=trust)
+
+        kernel = MagicMock()
+        kernel.add_filter = MagicMock()
+        with patch.dict("sys.modules", _mock_sk_modules()):
+            a.setup(kernel)
+
+        # Capture the function_invocation filter registered with the kernel
+        calls = kernel.add_filter.call_args_list
+        assert len(calls) >= 1
+
+        # Simulate the filter execution
+        async def _run():
+            fn_filter = calls[0][0][1]
+            ctx = MagicMock()
+            ctx.function.plugin_name = "MyPlugin"
+            ctx.function.name = "my_func"
+            ctx.function.is_prompt = False
+            ctx.is_streaming = False
+            ctx.result = None
+
+            async def _next(c):
+                pass
+
+            await fn_filter(ctx, _next)
+
+        asyncio.run(_run())
+        trust.add_node.assert_called_once()

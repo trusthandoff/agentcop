@@ -61,7 +61,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from agentcop.adapters._runtime import check_tool_call
+from agentcop.adapters._runtime import check_tool_call, record_trust_node
 from agentcop.event import SentinelEvent
 
 
@@ -123,6 +123,10 @@ class SemanticKernelSentinelAdapter:
         sandbox=None,
         approvals=None,
         identity=None,
+        trust=None,
+        attestor=None,
+        hierarchy=None,
+        trust_interop=None,
     ) -> None:
         _require_semantic_kernel()
         self._run_id = run_id
@@ -131,6 +135,10 @@ class SemanticKernelSentinelAdapter:
         self._sandbox = sandbox
         self._approvals = approvals
         self._identity = identity
+        self._trust = trust
+        self._attestor = attestor
+        self._hierarchy = hierarchy
+        self._trust_interop = trust_interop
         self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
 
@@ -211,6 +219,11 @@ class SemanticKernelSentinelAdapter:
                 if isinstance(meta, dict):
                     metadata = {k: str(v) for k, v in meta.items()}
 
+            record_trust_node(
+                adapter_self,
+                agent_id=plugin_name,
+                tool_calls=[f"{plugin_name}.{function_name}"],
+            )
             adapter_self._buffer_event(
                 adapter_self.to_sentinel_event(
                     {

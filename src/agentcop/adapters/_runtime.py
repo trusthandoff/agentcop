@@ -62,6 +62,62 @@ def fire_security_event(
             buf.append(event)
 
 
+def record_trust_node(
+    adapter: Any,
+    agent_id: str,
+    tool_calls: list[str],
+    context_hash: str = "unknown",
+    output_hash: str = "unknown",
+    duration_ms: int = 0,
+    node_id: str | None = None,
+) -> None:
+    """Record an ExecutionNode in the adapter's TrustChainBuilder if configured.
+
+    No-op when the adapter has no ``_trust`` attribute or when the trust
+    module raises.  Must never disrupt adapter operation.
+    """
+    trust = getattr(adapter, "_trust", None)
+    if trust is None:
+        return
+    try:
+        from agentcop.trust.models import ExecutionNode, make_uuid
+
+        node = ExecutionNode(
+            node_id=node_id or make_uuid(),
+            agent_id=agent_id,
+            tool_calls=list(tool_calls),
+            context_hash=context_hash,
+            output_hash=output_hash,
+            duration_ms=duration_ms,
+        )
+        trust.add_node(node)
+        attestor = getattr(adapter, "_attestor", None)
+        if attestor is not None:
+            node.attestation = attestor.attest(agent_id)
+    except Exception:
+        pass  # trust recording must never disrupt adapter operation
+
+
+def check_hierarchy_call(adapter: Any, caller_id: str, callee_id: str) -> None:
+    """Check AgentHierarchy.can_call(); raise PermissionError if denied.
+
+    No-op when the adapter has no ``_hierarchy`` attribute.  Must never
+    suppress a PermissionError raised by the hierarchy check.
+    """
+    hierarchy = getattr(adapter, "_hierarchy", None)
+    if hierarchy is None:
+        return
+    try:
+        if not hierarchy.can_call(caller_id, callee_id):
+            raise PermissionError(
+                f"Hierarchy violation: {caller_id!r} not authorized to call {callee_id!r}"
+            )
+    except PermissionError:
+        raise
+    except Exception:
+        pass  # hierarchy checks must never disrupt adapter operation
+
+
 def check_tool_call(
     adapter: Any,
     tool_name: str,

@@ -210,6 +210,9 @@ class MoltbookSentinelAdapter:
         sandbox=None,
         approvals=None,
         identity=None,
+        rag_trust=None,
+        trust_observer=None,
+        hierarchy=None,
     ) -> None:
         # No _require_moltbook() here — adapter always works in manual mode without SDK
         self._agent_id = agent_id
@@ -220,6 +223,9 @@ class MoltbookSentinelAdapter:
         self._sandbox = sandbox
         self._approvals = approvals
         self._identity = identity
+        self._rag_trust = rag_trust
+        self._trust_observer = trust_observer
+        self._hierarchy = hierarchy
         self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
         self._badge_id: str | None = None
@@ -756,6 +762,17 @@ class MoltbookSentinelAdapter:
             attrs["moltbook.verified_peer"] = True
             attrs["moltbook.author_badge_id"] = raw.get("author_badge_id")
             attrs["moltbook.author_badge_tier"] = raw.get("author_badge_tier")
+
+        # RAG trust — verify the submolt source trust level if configured
+        if self._rag_trust is not None and submolt and not is_injected:
+            try:
+                import hashlib as _hashlib
+
+                doc_hash = _hashlib.sha256(content.encode()).hexdigest()
+                rag_result = self._rag_trust.verify_document(doc_hash, submolt)
+                attrs["moltbook.rag_trust"] = "verified" if rag_result.verified else "unverified"
+            except Exception:
+                pass
 
         event = SentinelEvent(
             event_id=f"mb-post-{post_id}",

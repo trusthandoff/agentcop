@@ -139,6 +139,9 @@ class LangSmithSentinelAdapter:
         sandbox=None,
         approvals=None,
         identity=None,
+        trust_observer=None,
+        hierarchy=None,
+        trust_interop=None,
     ) -> None:
         _require_langsmith()
         self._run_id = run_id
@@ -147,6 +150,9 @@ class LangSmithSentinelAdapter:
         self._sandbox = sandbox
         self._approvals = approvals
         self._identity = identity
+        self._trust_observer = trust_observer
+        self._hierarchy = hierarchy
+        self._trust_interop = trust_interop
         self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
         # Maps run_id str → start-time snapshot for correlation with update_run
@@ -285,6 +291,9 @@ class LangSmithSentinelAdapter:
                     raw["type"] = "chain_error" if is_err else "chain_finished"
 
                 adapter_self._buffer_event(adapter_self.to_sentinel_event(raw))
+                if not is_err and adapter_self._trust_observer is not None:
+                    with contextlib.suppress(Exception):
+                        adapter_self._trust_observer.record_verified_chain()
 
             return original_update(*args, **kwargs)
 

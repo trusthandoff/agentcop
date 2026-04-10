@@ -145,6 +145,9 @@ class LangfuseSentinelAdapter:
         sandbox=None,
         approvals=None,
         identity=None,
+        trust_observer=None,
+        hierarchy=None,
+        trust_interop=None,
     ) -> None:
         _require_langfuse()
         self._run_id = run_id
@@ -153,6 +156,9 @@ class LangfuseSentinelAdapter:
         self._sandbox = sandbox
         self._approvals = approvals
         self._identity = identity
+        self._trust_observer = trust_observer
+        self._hierarchy = hierarchy
+        self._trust_interop = trust_interop
         self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
 
@@ -207,6 +213,9 @@ class LangfuseSentinelAdapter:
                 raw = _span_to_raw_end(span)
                 if raw is not None:
                     adapter_self._buffer_event(adapter_self.to_sentinel_event(raw))
+                    if not raw.get("error") and adapter_self._trust_observer is not None:
+                        with contextlib.suppress(Exception):
+                            adapter_self._trust_observer.record_verified_chain()
 
             def shutdown(self):
                 pass

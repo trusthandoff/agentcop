@@ -1242,3 +1242,56 @@ class TestRuntimeSecurityLangSmith:
         a = _make_langsmith_runtime()
         event = a.to_sentinel_event({"type": "run_started", "run_name": "x", "run_type": "chain"})
         assert event.event_type == "run_started"
+
+
+# ---------------------------------------------------------------------------
+# Trust integration
+# ---------------------------------------------------------------------------
+
+
+def _make_adapter_trust(**kwargs):
+    with patch("agentcop.adapters.langsmith._require_langsmith"):
+        from agentcop.adapters.langsmith import LangSmithSentinelAdapter
+
+        return LangSmithSentinelAdapter(**kwargs)
+
+
+class TestTrustIntegration:
+    def test_accepts_trust_observer_param(self):
+        obs = MagicMock()
+        a = _make_adapter_trust(trust_observer=obs)
+        assert a._trust_observer is obs
+
+    def test_accepts_hierarchy_param(self):
+        hierarchy = MagicMock()
+        a = _make_adapter_trust(hierarchy=hierarchy)
+        assert a._hierarchy is hierarchy
+
+    def test_no_trust_observer_defaults_to_none(self):
+        a = _make_adapter_trust()
+        assert a._trust_observer is None
+
+    def test_successful_run_calls_record_verified_chain(self):
+        obs = MagicMock()
+        a = _make_adapter_trust(trust_observer=obs)
+        client = MagicMock()
+        client.create_run = MagicMock()
+        client.update_run = MagicMock()
+        a.setup(client)
+
+        # simulate create + successful update
+        client.create_run(name="my_chain", run_type="chain", id="r1")
+        client.update_run("r1", outputs={"result": "ok"})
+        obs.record_verified_chain.assert_called_once()
+
+    def test_error_run_does_not_call_record_verified_chain(self):
+        obs = MagicMock()
+        a = _make_adapter_trust(trust_observer=obs)
+        client = MagicMock()
+        client.create_run = MagicMock()
+        client.update_run = MagicMock()
+        a.setup(client)
+
+        client.create_run(name="my_chain", run_type="chain", id="r2")
+        client.update_run("r2", error="timeout")
+        obs.record_verified_chain.assert_not_called()

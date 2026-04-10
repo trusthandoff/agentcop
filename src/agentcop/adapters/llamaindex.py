@@ -54,7 +54,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from agentcop.adapters._runtime import check_tool_call
+from agentcop.adapters._runtime import check_tool_call, record_trust_node
 from agentcop.event import SentinelEvent
 
 
@@ -120,6 +120,10 @@ class LlamaIndexSentinelAdapter:
         sandbox=None,
         approvals=None,
         identity=None,
+        trust=None,
+        attestor=None,
+        hierarchy=None,
+        trust_interop=None,
     ) -> None:
         _require_llamaindex()
         self._run_id = run_id
@@ -128,6 +132,10 @@ class LlamaIndexSentinelAdapter:
         self._sandbox = sandbox
         self._approvals = approvals
         self._identity = identity
+        self._trust = trust
+        self._attestor = attestor
+        self._hierarchy = hierarchy
+        self._trust_interop = trust_interop
         self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
 
@@ -236,9 +244,16 @@ class LlamaIndexSentinelAdapter:
                     }
                 elif isinstance(event, AgentRunStepEndEvent):
                     step_output = getattr(event, "step_output", None)
+                    task_id = str(getattr(event, "task_id", "") or "")
+                    record_trust_node(
+                        adapter_self,
+                        agent_id=task_id or "llamaindex-agent",
+                        tool_calls=["agent_step"],
+                        node_id=task_id or None,
+                    )
                     raw = {
                         "type": "agent_step_finished",
-                        "task_id": str(getattr(event, "task_id", "") or ""),
+                        "task_id": task_id,
                         "step_num": _extract_step_num(event),
                         "output": _extract_step_output(step_output),
                         "is_last": bool(getattr(step_output, "is_last", False)),

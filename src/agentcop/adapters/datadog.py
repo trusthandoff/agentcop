@@ -183,6 +183,9 @@ class DatadogSentinelAdapter:
         sandbox=None,
         approvals=None,
         identity=None,
+        trust_observer=None,
+        hierarchy=None,
+        trust_interop=None,
     ) -> None:
         _require_ddtrace()
         self._run_id = run_id
@@ -191,6 +194,9 @@ class DatadogSentinelAdapter:
         self._sandbox = sandbox
         self._approvals = approvals
         self._identity = identity
+        self._trust_observer = trust_observer
+        self._hierarchy = hierarchy
+        self._trust_interop = trust_interop
         self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
 
@@ -244,6 +250,13 @@ class DatadogSentinelAdapter:
                                 context={"service": raw.get("service", "")},
                             )  # already buffered as gate_denied / permission_violation on suppress
                     adapter_self._buffer_event(adapter_self.to_sentinel_event(raw))
+                    span_type = raw.get("type", "")
+                    if (
+                        not span_type.endswith("_error")
+                        and adapter_self._trust_observer is not None
+                    ):
+                        with contextlib.suppress(Exception):
+                            adapter_self._trust_observer.record_verified_chain()
                 except Exception:
                     pass  # never let adapter errors disrupt ddtrace export
             return original_write(spans)

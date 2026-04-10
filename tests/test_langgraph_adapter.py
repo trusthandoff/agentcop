@@ -739,3 +739,71 @@ class TestRuntimeSecurityLangGraph:
         list(a.iter_events([_TASK_RAW]))
         approvals.submit.assert_called_once()
         approvals.wait_for_decision.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Trust integration
+# ---------------------------------------------------------------------------
+
+
+def _make_adapter_trust(**kwargs):
+    with patch("agentcop.adapters.langgraph._require_langgraph"):
+        from agentcop.adapters.langgraph import LangGraphSentinelAdapter
+
+        return LangGraphSentinelAdapter(**kwargs)
+
+
+_TASK_RESULT_RAW = {
+    "type": "task_result",
+    "timestamp": "2026-01-01T10:00:01Z",
+    "step": 1,
+    "payload": {
+        "id": "task-abc",
+        "name": "my_node",
+        "error": None,
+        "interrupts": [],
+    },
+}
+
+
+class TestTrustIntegration:
+    def test_accepts_trust_param(self):
+        trust = MagicMock()
+        a = _make_adapter_trust(trust=trust)
+        assert a._trust is trust
+
+    def test_accepts_attestor_param(self):
+        attestor = MagicMock()
+        a = _make_adapter_trust(attestor=attestor)
+        assert a._attestor is attestor
+
+    def test_accepts_hierarchy_param(self):
+        hierarchy = MagicMock()
+        a = _make_adapter_trust(hierarchy=hierarchy)
+        assert a._hierarchy is hierarchy
+
+    def test_accepts_trust_interop_param(self):
+        ti = MagicMock()
+        a = _make_adapter_trust(trust_interop=ti)
+        assert a._trust_interop is ti
+
+    def test_no_trust_param_defaults_to_none(self):
+        a = _make_adapter_trust()
+        assert a._trust is None
+
+    def test_task_result_success_calls_add_node(self):
+        trust = MagicMock()
+        a = _make_adapter_trust(trust=trust)
+        a.to_sentinel_event(_TASK_RESULT_RAW)
+        trust.add_node.assert_called_once()
+
+    def test_task_result_error_does_not_call_add_node(self):
+        trust = MagicMock()
+        a = _make_adapter_trust(trust=trust)
+        raw = {**_TASK_RESULT_RAW, "payload": {**_TASK_RESULT_RAW["payload"], "error": "boom"}}
+        a.to_sentinel_event(raw)
+        trust.add_node.assert_not_called()
+
+    def test_no_trust_does_not_raise_on_task_result(self):
+        a = _make_adapter_trust()
+        a.to_sentinel_event(_TASK_RESULT_RAW)  # must not raise

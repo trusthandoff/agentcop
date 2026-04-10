@@ -60,7 +60,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from agentcop.adapters._runtime import check_tool_call
+from agentcop.adapters._runtime import check_tool_call, record_trust_node
 from agentcop.event import SentinelEvent
 
 
@@ -160,6 +160,10 @@ class HaystackSentinelAdapter:
         sandbox=None,
         approvals=None,
         identity=None,
+        trust=None,
+        attestor=None,
+        hierarchy=None,
+        trust_interop=None,
     ) -> None:
         _require_haystack()
         self._run_id = run_id
@@ -168,6 +172,10 @@ class HaystackSentinelAdapter:
         self._sandbox = sandbox
         self._approvals = approvals
         self._identity = identity
+        self._trust = trust
+        self._attestor = attestor
+        self._hierarchy = hierarchy
+        self._trust_interop = trust_interop
         self._buffer: list[SentinelEvent] = []
         self._lock = threading.Lock()
 
@@ -246,6 +254,8 @@ class HaystackSentinelAdapter:
                     raw_end = _op_to_raw(operation_name, init_tags, "end", span_tags=proxy._tags)
                     if raw_end is not None:
                         adapter_self._buffer_event(adapter_self.to_sentinel_event(raw_end))
+                    comp_name = init_tags.get("haystack.component.name", operation_name)
+                    record_trust_node(adapter_self, agent_id=comp_name, tool_calls=[comp_name])
                 except Exception as exc:
                     # --- error event ---
                     raw_err = _op_to_raw(operation_name, init_tags, "error", error=str(exc))

@@ -1215,3 +1215,64 @@ class TestRuntimeSecurityAutoGen:
         a.to_sentinel_event(_FUNC_CALL_RAW)
         approvals.submit.assert_called_once()
         approvals.wait_for_decision.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Trust integration
+# ---------------------------------------------------------------------------
+
+
+def _make_adapter_trust(**kwargs):
+    with patch("agentcop.adapters.autogen._require_autogen"):
+        from agentcop.adapters.autogen import AutoGenSentinelAdapter
+
+        return AutoGenSentinelAdapter(**kwargs)
+
+
+class TestTrustIntegration:
+    def test_accepts_trust_param(self):
+        trust = MagicMock()
+        a = _make_adapter_trust(trust=trust)
+        assert a._trust is trust
+
+    def test_accepts_hierarchy_param(self):
+        hierarchy = MagicMock()
+        a = _make_adapter_trust(hierarchy=hierarchy)
+        assert a._hierarchy is hierarchy
+
+    def test_no_trust_param_defaults_to_none(self):
+        a = _make_adapter_trust()
+        assert a._trust is None
+
+    def test_function_call_completed_calls_add_node(self):
+        trust = MagicMock()
+        a = _make_adapter_trust(trust=trust)
+        a.to_sentinel_event({
+            "type": "function_call_completed",
+            "function_name": "search",
+            "result": "ok",
+            "sender": "assistant",
+        })
+        trust.add_node.assert_called_once()
+
+    def test_hierarchy_blocks_reply_to_unknown_callee(self):
+        hierarchy = MagicMock()
+        hierarchy.can_call.return_value = False
+        a = _make_adapter_trust(hierarchy=hierarchy)
+        with pytest.raises(PermissionError, match="Hierarchy violation"):
+            a.to_sentinel_event({
+                "type": "agent_reply_completed",
+                "agent": "agent_a",
+                "recipient": "agent_b",
+                "content": "hello",
+            })
+
+    def test_hierarchy_not_checked_when_no_recipient(self):
+        hierarchy = MagicMock()
+        a = _make_adapter_trust(hierarchy=hierarchy)
+        a.to_sentinel_event({
+            "type": "agent_reply_completed",
+            "agent": "agent_a",
+            "content": "hello",
+        })
+        hierarchy.can_call.assert_not_called()

@@ -41,7 +41,7 @@ from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime
 from typing import Any
 
-from agentcop.adapters._runtime import check_tool_call
+from agentcop.adapters._runtime import check_tool_call, record_trust_node
 from agentcop.event import SentinelEvent
 
 
@@ -99,6 +99,10 @@ class LangGraphSentinelAdapter:
         sandbox=None,
         approvals=None,
         identity=None,
+        trust=None,
+        attestor=None,
+        hierarchy=None,
+        trust_interop=None,
     ) -> None:
         _require_langgraph()
         self._thread_id = thread_id
@@ -107,6 +111,10 @@ class LangGraphSentinelAdapter:
         self._sandbox = sandbox
         self._approvals = approvals
         self._identity = identity
+        self._trust = trust
+        self._attestor = attestor
+        self._hierarchy = hierarchy
+        self._trust_interop = trust_interop
         # Buffer for runtime-security events (not used by normal translation).
         import threading
 
@@ -217,6 +225,12 @@ class LangGraphSentinelAdapter:
             sentinel_event_type = "node_end"
             severity = "INFO"
             body = f"node '{node_name}' finished (step {step})"
+            record_trust_node(
+                self,
+                agent_id=node_name,
+                tool_calls=[node_name],
+                node_id=task_id,
+            )
 
         attrs: dict[str, Any] = {
             "node": node_name,

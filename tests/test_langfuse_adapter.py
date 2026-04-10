@@ -1317,3 +1317,43 @@ class TestRuntimeSecurityLangfuse:
         a = _make_langfuse_runtime()
         event = a.to_sentinel_event({"type": "observation_started", "observation_name": "x"})
         assert event.event_type == "observation_started"
+
+
+# ---------------------------------------------------------------------------
+# Trust integration
+# ---------------------------------------------------------------------------
+
+
+def _make_adapter_trust(**kwargs):
+    with patch("agentcop.adapters.langfuse._require_langfuse"):
+        from agentcop.adapters.langfuse import LangfuseSentinelAdapter
+
+        return LangfuseSentinelAdapter(**kwargs)
+
+
+class TestTrustIntegration:
+    def test_accepts_trust_observer_param(self):
+        obs = MagicMock()
+        a = _make_adapter_trust(trust_observer=obs)
+        assert a._trust_observer is obs
+
+    def test_accepts_hierarchy_param(self):
+        hierarchy = MagicMock()
+        a = _make_adapter_trust(hierarchy=hierarchy)
+        assert a._hierarchy is hierarchy
+
+    def test_no_trust_observer_defaults_to_none(self):
+        a = _make_adapter_trust()
+        assert a._trust_observer is None
+
+    def test_on_end_success_calls_record_verified_chain(self):
+        obs = MagicMock()
+        a = _make_adapter_trust(trust_observer=obs)
+        client, mock_tp = _make_mock_client()
+        with patch.dict("sys.modules", _mock_langfuse_modules()):
+            a.setup(langfuse_client=client)
+
+        processor = _get_observer(mock_tp)
+        span = _make_span(obs_type="GENERATION", status_code_value=1)
+        processor.on_end(span)
+        obs.record_verified_chain.assert_called_once()

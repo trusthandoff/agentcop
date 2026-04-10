@@ -1324,3 +1324,50 @@ class TestRuntimeSecurityDatadog:
         a = _make_datadog_runtime()
         event = a.to_sentinel_event({"type": "llm_span_finished", "span_name": "openai.chat"})
         assert event.event_type == "llm_span_finished"
+
+
+# ---------------------------------------------------------------------------
+# Trust integration
+# ---------------------------------------------------------------------------
+
+
+def _make_adapter_trust(**kwargs):
+    with patch("agentcop.adapters.datadog._require_ddtrace"):
+        from agentcop.adapters.datadog import DatadogSentinelAdapter
+
+        return DatadogSentinelAdapter(**kwargs)
+
+
+class TestTrustIntegration:
+    def test_accepts_trust_observer_param(self):
+        obs = MagicMock()
+        a = _make_adapter_trust(trust_observer=obs)
+        assert a._trust_observer is obs
+
+    def test_accepts_hierarchy_param(self):
+        hierarchy = MagicMock()
+        a = _make_adapter_trust(hierarchy=hierarchy)
+        assert a._hierarchy is hierarchy
+
+    def test_no_trust_observer_defaults_to_none(self):
+        a = _make_adapter_trust()
+        assert a._trust_observer is None
+
+    def test_span_write_calls_record_verified_chain(self):
+        obs = MagicMock()
+        a = _make_adapter_trust(trust_observer=obs)
+        tracer = _make_mock_tracer()
+        a.setup(tracer=tracer)
+        span = _make_span(error=0)
+        _write(tracer, [span])
+        obs.record_verified_chain.assert_called()
+
+    def test_error_span_does_not_call_record_verified_chain(self):
+        """Spans with type ending in _error should not trigger record_verified_chain."""
+        obs = MagicMock()
+        a = _make_adapter_trust(trust_observer=obs)
+        tracer = _make_mock_tracer()
+        a.setup(tracer=tracer)
+        span = _make_span(error=1)
+        _write(tracer, [span])
+        obs.record_verified_chain.assert_not_called()

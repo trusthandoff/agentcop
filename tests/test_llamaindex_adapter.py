@@ -1052,3 +1052,45 @@ class TestRuntimeSecurityLlamaIndex:
         a = _make_llamaindex_runtime()
         event = a.to_sentinel_event({"type": "agent_tool_call", "tool_name": "search"})
         assert event.event_type == "agent_tool_call"
+
+
+# ---------------------------------------------------------------------------
+# Trust integration
+# ---------------------------------------------------------------------------
+
+
+def _make_adapter_trust(**kwargs):
+    with patch("agentcop.adapters.llamaindex._require_llamaindex"):
+        from agentcop.adapters.llamaindex import LlamaIndexSentinelAdapter
+
+        return LlamaIndexSentinelAdapter(**kwargs)
+
+
+class TestTrustIntegration:
+    def test_accepts_trust_param(self):
+        trust = MagicMock()
+        a = _make_adapter_trust(trust=trust)
+        assert a._trust is trust
+
+    def test_accepts_hierarchy_param(self):
+        hierarchy = MagicMock()
+        a = _make_adapter_trust(hierarchy=hierarchy)
+        assert a._hierarchy is hierarchy
+
+    def test_no_trust_defaults_to_none(self):
+        a = _make_adapter_trust()
+        assert a._trust is None
+
+    def test_record_trust_node_helper_works(self):
+        trust = MagicMock()
+        a = _make_adapter_trust(trust=trust)
+        from agentcop.adapters._runtime import record_trust_node
+
+        record_trust_node(a, agent_id="query-engine", tool_calls=["agent_step"])
+        trust.add_node.assert_called_once()
+
+    def test_no_trust_record_does_not_raise(self):
+        a = _make_adapter_trust()
+        from agentcop.adapters._runtime import record_trust_node
+
+        record_trust_node(a, agent_id="query-engine", tool_calls=["agent_step"])

@@ -1171,3 +1171,63 @@ class TestRuntimeSecurityHaystack:
         a = _make_haystack_runtime()
         event = a.to_sentinel_event({"type": "pipeline_started", "pipeline_name": "p"})
         assert event.event_type == "pipeline_started"
+
+
+# ---------------------------------------------------------------------------
+# Trust integration
+# ---------------------------------------------------------------------------
+
+
+def _make_adapter_trust(**kwargs):
+    with patch("agentcop.adapters.haystack._require_haystack"):
+        from agentcop.adapters.haystack import HaystackSentinelAdapter
+
+        return HaystackSentinelAdapter(**kwargs)
+
+
+class TestTrustIntegration:
+    def test_accepts_trust_param(self):
+        trust = MagicMock()
+        a = _make_adapter_trust(trust=trust)
+        assert a._trust is trust
+
+    def test_accepts_attestor_param(self):
+        attestor = MagicMock()
+        a = _make_adapter_trust(attestor=attestor)
+        assert a._attestor is attestor
+
+    def test_accepts_hierarchy_param(self):
+        hierarchy = MagicMock()
+        a = _make_adapter_trust(hierarchy=hierarchy)
+        assert a._hierarchy is hierarchy
+
+    def test_no_trust_defaults_to_none(self):
+        a = _make_adapter_trust()
+        assert a._trust is None
+
+    def test_trace_calls_record_trust_node_on_success(self):
+        trust = MagicMock()
+        a = _make_adapter_trust(trust=trust)
+        mock_proxy = MagicMock()
+        mock_proxy.provided_tracer = None
+        with patch.dict("sys.modules", _mock_modules()):
+            a.setup(proxy_tracer=mock_proxy)
+        tracer = mock_proxy.provided_tracer
+        tags = {"haystack.component.name": "llm", "haystack.component.type": "OpenAIGenerator"}
+        with tracer.trace("haystack.component.run", tags=tags):
+            pass
+        trust.add_node.assert_called_once()
+
+    def test_trace_does_not_call_add_node_on_error(self):
+        trust = MagicMock()
+        a = _make_adapter_trust(trust=trust)
+        mock_proxy = MagicMock()
+        mock_proxy.provided_tracer = None
+        with patch.dict("sys.modules", _mock_modules()):
+            a.setup(proxy_tracer=mock_proxy)
+        tracer = mock_proxy.provided_tracer
+        tags = {"haystack.component.name": "llm", "haystack.component.type": "OpenAIGenerator"}
+        with pytest.raises(ValueError):
+            with tracer.trace("haystack.component.run", tags=tags):
+                raise ValueError("fail")
+        trust.add_node.assert_not_called()

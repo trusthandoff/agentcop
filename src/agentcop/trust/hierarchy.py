@@ -1,6 +1,7 @@
 """
 AgentHierarchy — define and enforce agent authority and delegation rules.
 """
+
 from __future__ import annotations
 
 import logging
@@ -40,11 +41,11 @@ class AgentHierarchy:
     """
 
     def __init__(self, sentinel: Any | None = None) -> None:
-        self._defs: dict[str, HierarchyDefinition] = {}         # supervisor → def
-        self._worker_to_sup: dict[str, str] = {}                # worker → supervisor
-        self._veto_rights: dict[str, set[str]] = {}             # vetoing_agent → targets
-        self._quorum: dict[str, int] = {}                       # chain_id → required votes
-        self._delegation_depth: dict[str, int] = {}             # chain_id → current depth
+        self._defs: dict[str, HierarchyDefinition] = {}  # supervisor → def
+        self._worker_to_sup: dict[str, str] = {}  # worker → supervisor
+        self._veto_rights: dict[str, set[str]] = {}  # vetoing_agent → targets
+        self._quorum: dict[str, int] = {}  # chain_id → required votes
+        self._delegation_depth: dict[str, int] = {}  # chain_id → current depth
         self._sentinel = sentinel
         self._lock = threading.Lock()
 

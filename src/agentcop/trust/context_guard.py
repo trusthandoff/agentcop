@@ -1,6 +1,7 @@
 """
 ContextGuard — detect and report context mutations between agent steps.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -29,9 +30,7 @@ _CRITICAL_PATTERNS = [
 def _context_hash(context: Context) -> str:
     if isinstance(context, str):
         return hashlib.sha256(context.encode()).hexdigest()
-    return hashlib.sha256(
-        json.dumps(context, sort_keys=True, default=str).encode()
-    ).hexdigest()
+    return hashlib.sha256(json.dumps(context, sort_keys=True, default=str).encode()).hexdigest()
 
 
 @dataclass

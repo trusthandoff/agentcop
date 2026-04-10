@@ -1,6 +1,7 @@
 """
 ExecutionLineage — full execution audit trail across multi-agent pipelines.
 """
+
 from __future__ import annotations
 
 import json
@@ -48,43 +49,29 @@ class ExecutionLineage:
         len_a, len_b = len(nodes_a), len(nodes_b)
 
         if len_a != len_b:
-            diffs.append(
-                f"length differs: {chain_a}={len_a} vs {chain_b}={len_b}"
-            )
+            diffs.append(f"length differs: {chain_a}={len_a} vs {chain_b}={len_b}")
 
         for i in range(min(len_a, len_b)):
             a, b = nodes_a[i], nodes_b[i]
             if a.node_id != b.node_id:
-                diffs.append(
-                    f"step[{i}] node_id: {a.node_id!r} vs {b.node_id!r}"
-                )
+                diffs.append(f"step[{i}] node_id: {a.node_id!r} vs {b.node_id!r}")
             if a.agent_id != b.agent_id:
-                diffs.append(
-                    f"step[{i}] agent_id: {a.agent_id!r} vs {b.agent_id!r}"
-                )
+                diffs.append(f"step[{i}] agent_id: {a.agent_id!r} vs {b.agent_id!r}")
             if a.context_hash != b.context_hash:
                 diffs.append(
                     f"step[{i}] context_hash: {a.context_hash[:8]} vs {b.context_hash[:8]}"
                 )
             if a.output_hash != b.output_hash:
-                diffs.append(
-                    f"step[{i}] output_hash: {a.output_hash[:8]} vs {b.output_hash[:8]}"
-                )
+                diffs.append(f"step[{i}] output_hash: {a.output_hash[:8]} vs {b.output_hash[:8]}")
             if a.tool_calls != b.tool_calls:
-                diffs.append(
-                    f"step[{i}] tool_calls: {a.tool_calls} vs {b.tool_calls}"
-                )
+                diffs.append(f"step[{i}] tool_calls: {a.tool_calls} vs {b.tool_calls}")
 
         # Nodes only in the longer chain
         for i in range(min(len_a, len_b), max(len_a, len_b)):
             if i < len_a:
-                diffs.append(
-                    f"step[{i}] only in {chain_a}: node {nodes_a[i].node_id}"
-                )
+                diffs.append(f"step[{i}] only in {chain_a}: node {nodes_a[i].node_id}")
             else:
-                diffs.append(
-                    f"step[{i}] only in {chain_b}: node {nodes_b[i].node_id}"
-                )
+                diffs.append(f"step[{i}] only in {chain_b}: node {nodes_b[i].node_id}")
 
         return diffs
 

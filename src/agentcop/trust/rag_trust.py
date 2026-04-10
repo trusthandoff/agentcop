@@ -1,6 +1,7 @@
 """
 RAGTrustLayer — verify RAG document sources and detect poisoning attempts.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -138,7 +139,7 @@ class RAGTrustLayer:
                 match = re.search(pattern, doc_lower)
                 if match:
                     end = min(match.end() + 30, len(doc))
-                    matched_text = doc[match.start():end].strip()
+                    matched_text = doc[match.start() : end].strip()
                     alerts.append(
                         PoisoningAlert(
                             doc_hash=h,

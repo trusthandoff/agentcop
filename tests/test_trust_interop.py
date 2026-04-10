@@ -1,4 +1,5 @@
 """Tests for agentcop.trust.interop — TrustInterop."""
+
 from __future__ import annotations
 
 import json

@@ -1,6 +1,7 @@
 """
 ToolTrustBoundary — declare and enforce trust boundaries between tools.
 """
+
 from __future__ import annotations
 
 import logging

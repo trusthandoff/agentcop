@@ -1,4 +1,5 @@
 """Tests for agentcop.trust.memory_guard — MemoryGuard."""
+
 from __future__ import annotations
 
 import threading

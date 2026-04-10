@@ -1,4 +1,5 @@
 """Tests for agentcop.trust.context_guard — ContextGuard."""
+
 from __future__ import annotations
 
 from agentcop.trust.context_guard import ContextGuard, MutationReport, _context_hash

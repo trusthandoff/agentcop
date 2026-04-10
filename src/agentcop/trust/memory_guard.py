@@ -1,6 +1,7 @@
 """
 MemoryGuard — prevent memory poisoning in long-running agents.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -40,9 +41,7 @@ class PoisoningAlert:
 def _memory_hash(memory: Memory) -> str:
     if isinstance(memory, str):
         return hashlib.sha256(memory.encode()).hexdigest()
-    return hashlib.sha256(
-        json.dumps(memory, sort_keys=True, default=str).encode()
-    ).hexdigest()
+    return hashlib.sha256(json.dumps(memory, sort_keys=True, default=str).encode()).hexdigest()
 
 
 def _memory_text(memory: Memory) -> str:
@@ -99,9 +98,7 @@ class MemoryGuard:
         if intact:
             reason = "memory intact"
         else:
-            reason = (
-                f"hash mismatch: expected {expected_hash[:8]}, got {current_hash[:8]}"
-            )
+            reason = f"hash mismatch: expected {expected_hash[:8]}, got {current_hash[:8]}"
         return MemoryIntegrityResult(
             agent_id=agent_id,
             current_hash=current_hash,

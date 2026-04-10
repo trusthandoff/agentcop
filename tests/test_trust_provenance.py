@@ -1,4 +1,5 @@
 """Tests for agentcop.trust.provenance — ProvenanceTracker."""
+
 from __future__ import annotations
 
 import threading

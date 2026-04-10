@@ -1,4 +1,5 @@
 """Tests for agentcop.trust.lineage — ExecutionLineage."""
+
 from __future__ import annotations
 
 import json
@@ -8,7 +9,9 @@ from agentcop.trust.lineage import ExecutionLineage
 from agentcop.trust.models import ExecutionNode
 
 
-def _node(node_id: str, agent_id: str = "agent-a", tool_calls: list[str] | None = None) -> ExecutionNode:
+def _node(
+    node_id: str, agent_id: str = "agent-a", tool_calls: list[str] | None = None
+) -> ExecutionNode:
     return ExecutionNode(
         node_id=node_id,
         agent_id=agent_id,

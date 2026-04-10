@@ -1247,12 +1247,14 @@ class TestTrustIntegration:
     def test_function_call_completed_calls_add_node(self):
         trust = MagicMock()
         a = _make_adapter_trust(trust=trust)
-        a.to_sentinel_event({
-            "type": "function_call_completed",
-            "function_name": "search",
-            "result": "ok",
-            "sender": "assistant",
-        })
+        a.to_sentinel_event(
+            {
+                "type": "function_call_completed",
+                "function_name": "search",
+                "result": "ok",
+                "sender": "assistant",
+            }
+        )
         trust.add_node.assert_called_once()
 
     def test_hierarchy_blocks_reply_to_unknown_callee(self):
@@ -1260,19 +1262,23 @@ class TestTrustIntegration:
         hierarchy.can_call.return_value = False
         a = _make_adapter_trust(hierarchy=hierarchy)
         with pytest.raises(PermissionError, match="Hierarchy violation"):
-            a.to_sentinel_event({
-                "type": "agent_reply_completed",
-                "agent": "agent_a",
-                "recipient": "agent_b",
-                "content": "hello",
-            })
+            a.to_sentinel_event(
+                {
+                    "type": "agent_reply_completed",
+                    "agent": "agent_a",
+                    "recipient": "agent_b",
+                    "content": "hello",
+                }
+            )
 
     def test_hierarchy_not_checked_when_no_recipient(self):
         hierarchy = MagicMock()
         a = _make_adapter_trust(hierarchy=hierarchy)
-        a.to_sentinel_event({
-            "type": "agent_reply_completed",
-            "agent": "agent_a",
-            "content": "hello",
-        })
+        a.to_sentinel_event(
+            {
+                "type": "agent_reply_completed",
+                "agent": "agent_a",
+                "content": "hello",
+            }
+        )
         hierarchy.can_call.assert_not_called()

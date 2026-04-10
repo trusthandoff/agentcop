@@ -1,4 +1,5 @@
 """Tests for agentcop.trust.boundaries — ToolTrustBoundary."""
+
 from __future__ import annotations
 
 import threading
@@ -141,10 +142,9 @@ class TestToolTrustBoundaryThreadSafety:
             except Exception as exc:
                 errors.append(exc)
 
-        threads = (
-            [threading.Thread(target=writer, args=(i,)) for i in range(10)]
-            + [threading.Thread(target=reader, args=(i,)) for i in range(10)]
-        )
+        threads = [threading.Thread(target=writer, args=(i,)) for i in range(10)] + [
+            threading.Thread(target=reader, args=(i,)) for i in range(10)
+        ]
         for t in threads:
             t.start()
         for t in threads:

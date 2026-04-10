@@ -1,4 +1,5 @@
 """Integration tests for agentcop.trust — full multi-agent pipeline scenarios."""
+
 from __future__ import annotations
 
 import hashlib
@@ -207,5 +208,6 @@ class TestTrustObserverIntegration:
         from agentcop.trust import (
             TrustChainBuilder,
         )
+
         # If we reach here, all imports succeeded
         assert TrustChainBuilder is not None

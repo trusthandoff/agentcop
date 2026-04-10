@@ -960,11 +960,13 @@ class TestTrustIntegration:
         a = _make_adapter_trust(trust=trust)
 
         # Simulate _on_agent_completed via the bus handler by calling the method directly
-        a.to_sentinel_event({
-            "type": "agent_execution_completed",
-            "agent_role": "Researcher",
-            "output": "done",
-        })
+        a.to_sentinel_event(
+            {
+                "type": "agent_execution_completed",
+                "agent_role": "Researcher",
+                "output": "done",
+            }
+        )
         # record_trust_node is called from the bus handler, not from _from_agent_execution_completed
         # The direct to_sentinel_event path does not trigger the bus handler.
         # Verify the attribute is stored.

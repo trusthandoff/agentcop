@@ -4,6 +4,7 @@ TrustChainBuilder — core chain-of-trust implementation.
 Each node's payload_hash encodes its content AND the previous claim's ID,
 so any mutation anywhere in the chain is detectable at verify_chain() time.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -112,9 +113,7 @@ class TrustChainBuilder:
             expected = _hash_node(prev_claim_id, node)
             if expected != claim.payload_hash:
                 broken_at = claim.claim_id
-                _log.warning(
-                    "Chain broken at claim %s (node %s)", claim.claim_id, node.node_id
-                )
+                _log.warning("Chain broken at claim %s (node %s)", claim.claim_id, node.node_id)
                 break
 
         return TrustChain(
@@ -153,9 +152,7 @@ class TrustChainBuilder:
                     seen.add(a)
             chain_str = "→".join(unique) if unique else "(empty)"
             hash_preview = chain.claims[-1].payload_hash[:8] if chain.claims else "none"
-            return (
-                f"{chain_str} [hash:{hash_preview}] [verified:{str(chain.verified).lower()}]"
-            )
+            return f"{chain_str} [hash:{hash_preview}] [verified:{str(chain.verified).lower()}]"
 
         # JSON format
         data = {

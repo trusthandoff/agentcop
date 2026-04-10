@@ -1,4 +1,5 @@
 """Tests for agentcop.trust.attestation — NodeAttestor."""
+
 from __future__ import annotations
 
 import pytest
@@ -64,6 +65,7 @@ class TestNodeAttestorHashOnly:
 
     def test_attest_different_timestamps_different_hashes(self):
         import time
+
         c1 = self.attestor.attest("agent-x")
         time.sleep(0.001)
         c2 = self.attestor.attest("agent-x")

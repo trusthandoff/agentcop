@@ -1,4 +1,5 @@
 """Tests for agentcop.trust.observability — TrustObserver."""
+
 from __future__ import annotations
 
 import time

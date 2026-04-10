@@ -2,6 +2,7 @@
 Pure dataclass models for the TrustChain layer.
 No external dependencies — stdlib only.
 """
+
 from __future__ import annotations
 
 import uuid

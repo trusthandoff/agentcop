@@ -3,6 +3,7 @@ NodeAttestor — agent identity verification and inter-node handoff verification
 
 Falls back to hash-only mode if the ``cryptography`` package is not installed.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -212,8 +213,7 @@ class NodeAttestor:
         crypto = _try_ed25519()
         if crypto is None:
             raise AttestationError(
-                "cryptography package required for key generation: "
-                "pip install agentcop[badge]"
+                "cryptography package required for key generation: pip install agentcop[badge]"
             )
         private_key = crypto["Ed25519PrivateKey"].generate()
         priv_pem = private_key.private_bytes(
@@ -221,8 +221,12 @@ class NodeAttestor:
             format=crypto["PrivateFormat"].PKCS8,
             encryption_algorithm=crypto["NoEncryption"](),
         ).decode()
-        pub_pem = private_key.public_key().public_bytes(
-            encoding=crypto["Encoding"].PEM,
-            format=crypto["PublicFormat"].SubjectPublicKeyInfo,
-        ).decode()
+        pub_pem = (
+            private_key.public_key()
+            .public_bytes(
+                encoding=crypto["Encoding"].PEM,
+                format=crypto["PublicFormat"].SubjectPublicKeyInfo,
+            )
+            .decode()
+        )
         return priv_pem, pub_pem

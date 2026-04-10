@@ -5,6 +5,7 @@ The portable format is ``agentcop.trust.v1.<base64url(json)>``.
 A SHA256 checksum is embedded in the payload so tampering is detectable
 without requiring Ed25519 or any external crypto library.
 """
+
 from __future__ import annotations
 
 import base64
@@ -68,7 +69,7 @@ class TrustInterop:
                 f"Unknown portable claim format. Expected prefix '{_PREFIX}', "
                 f"got '{portable[:30]}...'"
             )
-        encoded = portable[len(_PREFIX):]
+        encoded = portable[len(_PREFIX) :]
 
         # Restore base64 padding
         padding = 4 - (len(encoded) % 4)
@@ -109,14 +110,16 @@ class TrustInterop:
         """Export a TrustClaim in OpenAI function call format."""
         return {
             "name": "trust_claim",
-            "arguments": json.dumps({
-                "claim_id": claim.claim_id,
-                "agent_id": claim.agent_id,
-                "claim_type": claim.claim_type,
-                "payload_hash": claim.payload_hash,
-                "issuer_id": claim.issuer_id,
-                "timestamp": claim.timestamp,
-            }),
+            "arguments": json.dumps(
+                {
+                    "claim_id": claim.claim_id,
+                    "agent_id": claim.agent_id,
+                    "claim_type": claim.claim_type,
+                    "payload_hash": claim.payload_hash,
+                    "issuer_id": claim.issuer_id,
+                    "timestamp": claim.timestamp,
+                }
+            ),
         }
 
     @staticmethod

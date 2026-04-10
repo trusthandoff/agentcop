@@ -1,4 +1,5 @@
 """Tests for agentcop.trust.chain — TrustChainBuilder."""
+
 from __future__ import annotations
 
 import json

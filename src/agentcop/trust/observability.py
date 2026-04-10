@@ -1,6 +1,7 @@
 """
 TrustObserver — export trust data to external observability platforms.
 """
+
 from __future__ import annotations
 
 import json
@@ -77,21 +78,23 @@ class TrustObserver:
         trace_id = chain.chain_id.replace("-", "")[:16]
         spans = []
         for claim in chain.claims:
-            spans.append({
-                "trace_id": trace_id,
-                "span_id": claim.claim_id.replace("-", "")[:16],
-                "name": f"trust.{claim.claim_type}",
-                "service": "agentcop.trust",
-                "resource": claim.agent_id,
-                "start": int(claim.timestamp * 1e9),  # nanoseconds
-                "duration": 0,
-                "meta": {
-                    "trust.verified": str(chain.verified),
-                    "trust.claim_type": claim.claim_type,
-                    "trust.payload_hash": claim.payload_hash[:16],
-                },
-                "error": 0 if chain.verified else 1,
-            })
+            spans.append(
+                {
+                    "trace_id": trace_id,
+                    "span_id": claim.claim_id.replace("-", "")[:16],
+                    "name": f"trust.{claim.claim_type}",
+                    "service": "agentcop.trust",
+                    "resource": claim.agent_id,
+                    "start": int(claim.timestamp * 1e9),  # nanoseconds
+                    "duration": 0,
+                    "meta": {
+                        "trust.verified": str(chain.verified),
+                        "trust.claim_type": claim.claim_type,
+                        "trust.payload_hash": claim.payload_hash[:16],
+                    },
+                    "error": 0 if chain.verified else 1,
+                }
+            )
         return {"traces": [spans]}
 
     # ------------------------------------------------------------------

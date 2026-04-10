@@ -1,4 +1,5 @@
 """Tests for agentcop.trust.models — pure dataclasses and exceptions."""
+
 from __future__ import annotations
 
 import uuid

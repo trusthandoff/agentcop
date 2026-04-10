@@ -1,4 +1,5 @@
 """Tests for agentcop.trust.rag_trust — RAGTrustLayer."""
+
 from __future__ import annotations
 
 from agentcop.trust.rag_trust import PoisoningAlert, RAGTrustLayer, RAGTrustResult

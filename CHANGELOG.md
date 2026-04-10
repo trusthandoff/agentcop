@@ -11,6 +11,70 @@ agentcop uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.4.12] — 2026-04-10
+
+### Added
+
+- **MCP Server** (`agentcop[mcp]`) — expose agentcop security tools natively inside
+  Claude Desktop and Cursor via the Model Context Protocol. Zero config once installed:
+  `pip install agentcop[mcp]` + one JSON snippet in the client config.
+  Entry point: `agentcop-mcp` (stdio transport).
+
+- **`scan_agent` tool** — full OWASP LLM Top 10 scan over agent source code.
+  Detects prompt injection (LLM01), hardcoded credentials (LLM06), dangerous
+  `eval`/`exec` usage (LLM02), unvalidated tool results (LLM07), missing
+  sanitization (LLM07), and excessive agency (LLM08). Returns score 0–100,
+  tier (SECURED / MONITORED / AT_RISK), per-finding line numbers, and actionable fixes.
+  Maximum 50 000 characters; runs in a thread-pool executor, 30-second timeout.
+
+- **`quick_check` tool** — millisecond-latency regex scan with no API call.
+  Checks 5 high-signal patterns: prompt injection phrases, hardcoded secrets,
+  `eval`/`exec`, unvalidated tool results, and missing input sanitization.
+  Maximum 5 000 characters. Returns `clean: true/false`, issue list, and `scan_time_ms`.
+
+- **`check_badge` tool** — verify an agent's agentcop security badge before
+  trusting it in a multi-agent pipeline. Accepts `agent_id` (local SQLite lookup)
+  or `badge_url` (URL-based lookup). Returns `valid`, `tier`, `score`, `issued_at`,
+  `expires_at`, `runtime_protected`, and `chain_verified`. Gracefully degrades when
+  `agentcop[badge]` is not installed.
+
+- **`get_cve_report` tool** — curated CVE feed for AI agent frameworks.
+  Covers LangChain (CVE-2023-46229, CVE-2023-36189, CVE-2024-3095), CrewAI
+  (CVE-2024-27259), AutoGen (CVE-2024-45014), and OpenClaw (CVE-2024-39908).
+  Filterable by framework (`langchain`, `crewai`, `autogen`, `openclaw`, `all`)
+  and `days` window (1–30).
+
+- **`reliability_report` tool** — behavioral consistency metrics pulled from
+  `agentcop.reliability.store.ReliabilityStore`. Returns `reliability_score`,
+  `tier` (STABLE / VARIABLE / UNSTABLE / CRITICAL), five raw metrics
+  (path_entropy, tool_variance, retry_explosion_score, branch_instability,
+  tokens_per_run_avg), trend, and top issues. Time window: 1–168 hours. Gracefully
+  degrades when no data exists for the requested agent.
+
+- **`trust_chain_status` tool** — cryptographic verification of a registered
+  `TrustChainBuilder`. Returns `verified`, `broken_at`, `claims_count`, node list,
+  hierarchy violations, unsigned handoff count, and a compact chain export string.
+  Chains are registered in-process via `agentcop.mcp_server.register_chain(id, builder)`.
+
+- **`docs/guides/mcp-server.md`** — complete MCP server integration guide:
+  install, Claude Desktop config, Cursor config, Docker usage, and natural-language
+  usage examples for all 6 tools.
+
+- **`docs/guides/mcp-server.zh.md`** — Simplified Chinese translation of the
+  MCP server guide (code blocks unchanged).
+
+- **`docs/api-reference/mcp.md`** — full API reference for all 6 MCP tools:
+  input schemas, output schemas, and request/response examples.
+
+### Tests
+
+- **78 MCP server tests** across `tests/test_mcp_server.py`:
+  schema validation, handler logic, edge-case inputs, trust registry lookup, CVE
+  filtering, badge lookup fallback, and reliability store fallback.
+- Total suite: **2526 tests passing**, zero regressions.
+
+---
+
 ## [0.4.11] — 2026-04-10
 
 ### Added
@@ -580,7 +644,9 @@ in CI).
 - `DEFAULT_DETECTORS` list.
 - Optional OTel export via `agentcop[otel]`.
 
-[Unreleased]: https://github.com/trusthandoff/agentcop/compare/v0.4.10...HEAD
+[Unreleased]: https://github.com/trusthandoff/agentcop/compare/v0.4.12...HEAD
+[0.4.12]: https://github.com/trusthandoff/agentcop/compare/v0.4.11...v0.4.12
+[0.4.11]: https://github.com/trusthandoff/agentcop/compare/v0.4.10...v0.4.11
 [0.4.10]: https://github.com/trusthandoff/agentcop/compare/v0.4.8...v0.4.10
 [0.4.8]: https://github.com/trusthandoff/agentcop/compare/v0.4.7...v0.4.8
 [0.4.7]: https://github.com/trusthandoff/agentcop/compare/v0.4.5...v0.4.7

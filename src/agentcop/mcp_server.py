@@ -28,7 +28,7 @@ _log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _SERVER_NAME = "agentcop"
-_SERVER_VERSION = "0.4.11"
+_SERVER_VERSION = "0.4.12"
 _SERVER_DESCRIPTION = (
     "The security cop for AI agent fleets. Scan for prompt injection, "
     "verify trust chains, monitor reliability, check CVEs — all from Claude or Cursor."

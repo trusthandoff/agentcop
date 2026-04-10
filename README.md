@@ -845,6 +845,49 @@ All parameters default to `None` — existing code requires no changes. See [doc
 
 ---
 
+## MCP Server — Scan agents directly from Claude or Cursor
+
+```
+pip install agentcop[mcp]
+```
+
+**Claude Desktop** (`~/.claude/claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "agentcop": {
+      "command": "agentcop-mcp"
+    }
+  }
+}
+```
+
+**Cursor** (`.cursor/mcp.json`):
+```json
+{
+  "mcpServers": {
+    "agentcop": {
+      "command": "agentcop-mcp"
+    }
+  }
+}
+```
+
+Then ask Claude: `"scan this agent for vulnerabilities"` or `"check the trust chain for my pipeline"`
+
+**Available tools:**
+
+| Tool | Description |
+|------|-------------|
+| `scan_agent` | Full OWASP LLM Top 10 scan — score 0-100, tier, and actionable fixes |
+| `quick_check` | Instant 5-pattern regex check — no API call, millisecond latency |
+| `check_badge` | Verify a valid agentcop security badge before trusting an agent |
+| `get_cve_report` | Latest CVEs for LangChain, CrewAI, AutoGen, OpenClaw |
+| `reliability_report` | Behavioral consistency metrics — entropy, drift, retry explosion |
+| `trust_chain_status` | Cryptographic verification of multi-agent execution chains |
+
+---
+
 ## Requirements
 
 - Python 3.11+

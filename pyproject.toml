@@ -76,6 +76,9 @@ moltbook = [
 badge = [
     "cryptography>=41.0",
 ]
+mcp = [
+    "mcp>=1.0",
+]
 runtime = [
     "pydantic>=2.7,<3",
 ]
@@ -87,6 +90,7 @@ dev = [
 
 [project.scripts]
 agentcop = "agentcop.reliability.cli:main"
+agentcop-mcp = "agentcop.mcp_server:main"
 
 [project.urls]
 Homepage = "https://github.com/trusthandoff/agentcop"

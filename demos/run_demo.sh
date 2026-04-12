@@ -29,15 +29,19 @@ echo -e "${GREEN}Dependencies ready.${RESET}"
 echo ""
 
 echo -e "Pick a demo:"
-echo -e "  ${GREEN}1)${RESET} THE SLEEPER          — your agent just changed sides"
-echo -e "  ${GREEN}2)${RESET} GHOST IN THE WIRE    — your API keys left the building"
-echo -e "  ${GREEN}3)${RESET} THE RANSOMWARE        — your agent just encrypted everything"
-echo -e "  ${GREEN}4)${RESET} THE SILENT WORM       — your agent just went viral"
-echo -e "  ${GREEN}5)${RESET} THE FLOOD             — your agent just became a weapon"
-echo -e "  ${GREEN}6)${RESET} THE AMPLIFIER         — one request, ten thousand responses"
-echo -e "  ${GREEN}7)${RESET} All (back to back)"
+echo -e "  ${GREEN} 1)${RESET} THE SLEEPER          — your agent just changed sides"
+echo -e "  ${GREEN} 2)${RESET} GHOST IN THE WIRE    — your API keys left the building"
+echo -e "  ${GREEN} 3)${RESET} THE RANSOMWARE        — your agent just encrypted everything"
+echo -e "  ${GREEN} 4)${RESET} THE SILENT WORM       — your agent just went viral"
+echo -e "  ${GREEN} 5)${RESET} THE FLOOD             — your agent just became a weapon"
+echo -e "  ${GREEN} 6)${RESET} THE AMPLIFIER         — one request, ten thousand responses"
+echo -e "  ${GREEN} 7)${RESET} THE ERASER            — your agent just deleted everything"
+echo -e "  ${GREEN} 8)${RESET} THE GLITCH            — your agent is corrupting itself"
+echo -e "  ${GREEN} 9)${RESET} THE TRADING BOT       — your agent made you rich. then didn't."
+echo -e "  ${GREEN}10)${RESET} THE ASSISTANT         — your AI just read the wrong document"
+echo -e "  ${GREEN}11)${RESET} All (back to back)"
 echo ""
-read -rp "Enter choice [1-7]: " choice
+read -rp "Enter choice [1-11]: " choice
 
 run_demo() {
     local script="$1"
@@ -79,13 +83,29 @@ case "$choice" in
         run_demo "${SCRIPT_DIR}/the_amplifier.py" "THE AMPLIFIER"
         ;;
     7)
+        run_demo "${SCRIPT_DIR}/the_eraser.py" "THE ERASER"
+        ;;
+    8)
+        run_demo "${SCRIPT_DIR}/the_glitch.py" "THE GLITCH"
+        ;;
+    9)
+        run_demo "${SCRIPT_DIR}/the_trading_bot.py" "THE TRADING BOT"
+        ;;
+    10)
+        run_demo "${SCRIPT_DIR}/the_assistant.py" "THE ASSISTANT"
+        ;;
+    11)
         for demo in \
             "${SCRIPT_DIR}/the_sleeper.py:THE SLEEPER" \
             "${SCRIPT_DIR}/ghost_in_the_wire.py:GHOST IN THE WIRE" \
             "${SCRIPT_DIR}/the_ransomware.py:THE RANSOMWARE" \
             "${SCRIPT_DIR}/the_silent_worm.py:THE SILENT WORM" \
             "${SCRIPT_DIR}/the_flood.py:THE FLOOD" \
-            "${SCRIPT_DIR}/the_amplifier.py:THE AMPLIFIER"
+            "${SCRIPT_DIR}/the_amplifier.py:THE AMPLIFIER" \
+            "${SCRIPT_DIR}/the_eraser.py:THE ERASER" \
+            "${SCRIPT_DIR}/the_glitch.py:THE GLITCH" \
+            "${SCRIPT_DIR}/the_trading_bot.py:THE TRADING BOT" \
+            "${SCRIPT_DIR}/the_assistant.py:THE ASSISTANT"
         do
             script="${demo%%:*}"
             name="${demo##*:}"
